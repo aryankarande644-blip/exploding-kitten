@@ -23,9 +23,11 @@ import {
   joinRoom,
   startGame,
   removeRoom,
+  restoreRoom,
   RoomState,
   getLobbyState,
 } from './rooms.js';
+import { loadRoom, persistRoom, deleteRoom } from './db.js';
 import {
   broadcastGameState,
   broadcastPublicState,
@@ -187,6 +189,7 @@ export function setupSocketHandlers(io: Server): void {
       const s = io.sockets.sockets.get(info.socketId);
       if (s) s.emit('LOBBY_UPDATE', lobby);
     }
+    persistRoom(room.code, room);
   }
 
   io.on('connection', (socket: Socket) => {
@@ -219,6 +222,8 @@ export function setupSocketHandlers(io: Server): void {
             player_id: playerId,
             ...getLobbyState(room),
           });
+
+          persistRoom(roomCode, room);
         } catch (e: any) {
           socket.emit('ERROR', { message: e.message });
         }
@@ -227,7 +232,7 @@ export function setupSocketHandlers(io: Server): void {
 
     socket.on(
       'JOIN_ROOM',
-      (data: { room_code: string; player_name: string }) => {
+      async (data: { room_code: string; player_name: string }) => {
         try {
           if (!data?.room_code || !data?.player_name?.trim()) {
             throw new Error('Room code and player name required');
@@ -236,9 +241,17 @@ export function setupSocketHandlers(io: Server): void {
           const roomCode = data.room_code.toUpperCase();
           const playerId = crypto.randomUUID();
 
-          joinRoom(roomCode, playerId, data.player_name.trim(), socket.id);
+          let room = getRoom(roomCode);
+          if (!room) {
+            const loaded = await loadRoom(roomCode);
+            if (loaded) {
+              restoreRoom(roomCode, loaded);
+              room = loaded;
+            }
+          }
+          if (!room) throw new Error('Room not found');
 
-          const room = getRoom(roomCode)!;
+          joinRoom(roomCode, playerId, data.player_name.trim(), socket.id);
 
           socketToRoom.set(socket.id, roomCode);
           socketToPlayer.set(socket.id, playerId);
@@ -344,6 +357,7 @@ if (gs && gs.status === 'in_progress') {
 
           if (room.players.size === 0) {
             clearNopeTimer(room);
+            deleteRoom(roomCode);
             removeRoom(roomCode);
             return;
           }
@@ -627,14 +641,20 @@ if (gs && gs.status === 'in_progress') {
 
     socket.on(
       'RECONNECT',
-      (data: { room_code: string; player_id: string }) => {
+      async (data: { room_code: string; player_id: string }) => {
         try {
           if (!data?.room_code || !data?.player_id)
             throw new Error('Room code and player ID required');
 
           const roomCode = data.room_code.toUpperCase();
-          const room = getRoom(roomCode);
-          if (!room) throw new Error('Room not found');
+
+          let room = getRoom(roomCode);
+          if (!room) {
+            const loaded = await loadRoom(roomCode);
+            if (!loaded) throw new Error('Room not found');
+            restoreRoom(roomCode, loaded);
+            room = loaded;
+          }
           if (!room.players.has(data.player_id))
             throw new Error('Player not in room');
 
@@ -682,9 +702,17 @@ if (gs && gs.status === 'in_progress') {
                 deck_size: room.gameState.deck.length,
               });
             }
+
+            // Re-open the nope window with a fresh countdown if an action was
+            // mid-flight when the server restarted.
+            if (room.gameState.pendingAction) {
+              openNopeWindow(io, room);
+            }
           } else {
             emitLobby(io, room);
           }
+
+          persistRoom(roomCode, room);
         } catch (e: any) {
           socket.emit('ERROR', { message: e.message });
         }

@@ -2,6 +2,7 @@ import { Server } from 'socket.io';
 import { Card } from '../engine/index.ts';
 import { getPlayer } from '../engine/index.ts';
 import { RoomState } from './rooms.js';
+import { persistRoom } from './db.js';
 
 export function broadcastGameState(io: Server, room: RoomState): void {
   if (!room.gameState) return;
@@ -45,6 +46,8 @@ export function broadcastGameState(io: Server, room: RoomState): void {
     const player = getPlayer(state, playerId);
     playerSocket.emit('PRIVATE_HAND', { hand: player.hand });
   }
+
+  persistRoom(room.code, room);
 }
 
 export function broadcastPublicState(io: Server, room: RoomState): void {

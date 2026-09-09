@@ -8,11 +8,13 @@
   },
   "dependencies": {
     "cors": "^2.8.5",
+    "pg": "^8.23.0",
     "socket.io": "^4.7.4",
     "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
+    "@types/pg": "^8.23.1",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3"
   }

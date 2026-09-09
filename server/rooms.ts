@@ -8,6 +8,7 @@ export interface PlayerInfo {
 }
 
 export interface RoomState {
+  code: string;
   gameState: GameState | null;
   players: Map<string, PlayerInfo>;
   hostId: string;
@@ -40,6 +41,7 @@ export function createRoom(
 ): { roomCode: string; room: RoomState } {
   const roomCode = generateRoomCode();
   const room: RoomState = {
+    code: roomCode,
     gameState: null,
     players: new Map([[hostId, { socketId: hostSocketId, name: hostName }]]),
     hostId,
@@ -85,6 +87,10 @@ export function startGame(roomCode: string): void {
 
 export function removeRoom(roomCode: string): void {
   rooms.delete(roomCode);
+}
+
+export function restoreRoom(roomCode: string, room: RoomState): void {
+  rooms.set(roomCode, room);
 }
 
 export function findRoomByPlayerId(
