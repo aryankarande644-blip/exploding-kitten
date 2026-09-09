@@ -33,7 +33,7 @@ import {
   sendFutureView,
 } from './broadcast.js';
 
-const NOPE_WINDOW_MS = 5000;
+const NOPE_WINDOW_MS = 36000;
 
 function clearNopeTimer(room: RoomState): void {
   if (room.nopeTimer) {

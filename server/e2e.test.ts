@@ -97,7 +97,7 @@ class TestClient {
         other.emit('PASS_NOPE');
       }
     }
-    const end = Date.now() + 6000;
+    const end = Date.now() + 42000;
     while (Date.now() < end) {
       await delay(150);
       if (!source.gameState?.pendingAction) break;
