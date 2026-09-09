@@ -13,6 +13,9 @@ export interface RoomState {
   hostId: string;
   pendingFavor: { targetPlayerId: string; sourcePlayerId: string } | null;
   pendingDefuse: { playerId: string; kitten: Card } | null;
+  nopeTimer: ReturnType<typeof setTimeout> | null;
+  nopePassed: Set<string>;
+  nopeWindowDeadline: number | null;
 }
 
 const rooms = new Map<string, RoomState>();
@@ -42,6 +45,9 @@ export function createRoom(
     hostId,
     pendingFavor: null,
     pendingDefuse: null,
+    nopeTimer: null,
+    nopePassed: new Set<string>(),
+    nopeWindowDeadline: null,
   };
   rooms.set(roomCode, room);
   return { roomCode, room };

@@ -33,9 +33,36 @@ import {
   sendFutureView,
 } from './broadcast.js';
 
+const NOPE_WINDOW_MS = 5000;
+
+function clearNopeTimer(room: RoomState): void {
+  if (room.nopeTimer) {
+    clearTimeout(room.nopeTimer);
+    room.nopeTimer = null;
+  }
+  room.nopeWindowDeadline = null;
+  room.nopePassed.clear();
+}
+
+function eligibleNopePlayerIds(room: RoomState): string[] {
+  if (!room.gameState || room.gameState.status !== 'in_progress') return [];
+  const action = room.gameState.pendingAction;
+  if (!action) return [];
+  const ids: string[] = [];
+  for (const [id, info] of room.players) {
+    if (!info.socketId) continue;
+    if (id === action.sourcePlayerId) continue;
+    const player = getPlayer(room.gameState, id);
+    if (!player.alive) continue;
+    if (player.hand.some((c) => c.type === 'nope')) ids.push(id);
+  }
+  return ids;
+}
+
 function emitGameOver(io: Server, room: RoomState): void {
   const state = room.gameState;
   if (!state || state.status !== 'finished') return;
+  clearNopeTimer(room);
   for (const [, info] of room.players) {
     const s = io.sockets.sockets.get(info.socketId);
     if (s) {
@@ -59,13 +86,35 @@ function openNopeWindow(io: Server, room: RoomState): void {
   const action = room.gameState.pendingAction;
   if (!action) return;
 
-  for (const [, info] of room.players) {
+  clearNopeTimer(room);
+  room.nopePassed.clear();
+
+  const eligible = eligibleNopePlayerIds(room);
+  if (eligible.length === 0) {
+    resolveNopeAction(io, room);
+    return;
+  }
+
+  const deadline = Date.now() + NOPE_WINDOW_MS;
+  room.nopeWindowDeadline = deadline;
+  room.nopeTimer = setTimeout(() => {
+    room.nopeTimer = null;
+    room.nopeWindowDeadline = null;
+    resolveNopeAction(io, room);
+  }, NOPE_WINDOW_MS);
+
+  for (const [id, info] of room.players) {
     const s = io.sockets.sockets.get(info.socketId);
     if (s) {
       s.emit('NOPE_WINDOW_OPEN', {
         triggering_player: action.sourcePlayerId,
         card_played: action.cards[0],
         cards_played: action.cards,
+        deadline,
+        duration_ms: NOPE_WINDOW_MS,
+        eligible_count: eligible.length,
+        is_actor: id === action.sourcePlayerId,
+        may_pass: eligible.includes(id),
       });
     }
   }
@@ -73,6 +122,8 @@ function openNopeWindow(io: Server, room: RoomState): void {
 
 function resolveNopeAction(io: Server, room: RoomState): void {
   if (!room.gameState || room.gameState.status !== 'in_progress') return;
+
+  clearNopeTimer(room);
 
   const action = room.gameState.pendingAction;
   if (!action) return;
@@ -267,17 +318,21 @@ export function setupSocketHandlers(io: Server): void {
           ) {
             room.pendingFavor = null;
           }
-
-          if (gs && gs.status === 'in_progress') {
+if (gs && gs.status === 'in_progress') {
             const player = getPlayer(gs, playerId);
             if (player.alive) {
               eliminate(gs, player);
               checkWin(gs);
               const isCurrent = gs.players[gs.currentPlayerIndex]?.id === playerId;
+
               if (isCurrent) {
                 advanceToPlayer(gs, nextAlivePlayer(gs), 1);
               }
             }
+          }
+
+          if (gs && gs.pendingAction) {
+            openNopeWindow(io, room);
           }
 
           room.players.delete(playerId);
@@ -288,6 +343,7 @@ export function setupSocketHandlers(io: Server): void {
           socket.emit('LEFT_ROOM', { room_code: roomCode });
 
           if (room.players.size === 0) {
+            clearNopeTimer(room);
             removeRoom(roomCode);
             return;
           }
@@ -403,6 +459,9 @@ export function setupSocketHandlers(io: Server): void {
           if (action.sourcePlayerId !== playerId)
             throw new Error('Only the acting player can resolve');
 
+          if (eligibleNopePlayerIds(room).length > 0)
+            throw new Error('Waiting for other players to Nope or pass');
+
           const player = getPlayer(state, playerId);
           if (!player.alive) throw new Error('Player is eliminated');
 
@@ -412,6 +471,45 @@ export function setupSocketHandlers(io: Server): void {
         }
       }
     );
+
+    socket.on('PASS_NOPE', () => {
+      try {
+        const ctx = getContext(socket);
+        if (!ctx) throw new Error('Not in a room');
+
+        const { room, playerId } = ctx;
+        const state = room.gameState;
+        if (!state) throw new Error('Game not started');
+        if (!state.pendingAction) throw new Error('No pending action');
+
+        const player = getPlayer(state, playerId);
+        if (!player.alive) throw new Error('Player is eliminated');
+
+        const eligible = eligibleNopePlayerIds(room);
+        if (!eligible.includes(playerId))
+          throw new Error('You cannot pass on this action');
+        if (room.nopePassed.has(playerId))
+          throw new Error('Already passed');
+
+        room.nopePassed.add(playerId);
+
+        if (eligible.every((id) => room.nopePassed.has(id))) {
+          resolveNopeAction(io, room);
+        } else {
+          for (const [, info] of room.players) {
+            const s = io.sockets.sockets.get(info.socketId);
+            if (s) {
+              s.emit('NOPE_PASSED', {
+                player_id: playerId,
+                deadline: room.nopeWindowDeadline,
+              });
+            }
+          }
+        }
+      } catch (e: any) {
+        socket.emit('ERROR', { message: e.message });
+      }
+    });
 
     socket.on('DRAW_CARD', () => {
       try {

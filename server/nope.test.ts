@@ -47,8 +47,7 @@ class Client {
   }
 }
 
-async function main() {
-  console.log('=== Nope + Attack Stack E2E ===\n');
+async function setupGame(): Promise<{ a: Client; b: Client; code: string }> {
   const a = new Client('Alice');
   const b = new Client('Bob');
 
@@ -71,9 +70,16 @@ async function main() {
   const started = a.waitFor('GAME_STATE_UPDATE');
   a.emit('START_GAME');
   await started;
-
   await delay(300);
+  return { a, b, code };
+}
 
+// Returns the player who can play an action card (attack/skip/shuffle) and
+// their card, drawing to advance turns until one is found.
+async function findActionPlayable(
+  a: Client,
+  b: Client
+): Promise<{ attacker: Client; attackCard: any; opponent: Client }> {
   let attacker = a.state?.currentPlayerId === a.playerId ? a : b;
   let attackCard = attacker.has('attack') || attacker.has('skip') || attacker.has('shuffle');
 
@@ -89,57 +95,135 @@ async function main() {
     activeClient.emit('DRAW_CARD');
     await drawAck;
   }
-  const opponent =
-    attacker === a ? b : a;
+  return { attacker, attackCard, opponent: attacker === a ? b : a };
+}
 
-  const cardName = attackCard.type;
-  const opponentNope = opponent.has('nope');
-  console.log(`${attacker.name} will play ${cardName}. Opponent ${opponent.name} ${opponentNope ? 'HAS' : 'has no'} Nope.`);
-
-  attacker.emit('PLAY_CARD', { card_id: attackCard.id });
-
-  await delay(900);
-  if (opponent.nopeWindows.length === 0) {
-    console.log(`FAIL: NOPE_WINDOW_OPEN not received (Alice:${a.nopeWindows.length}, Bob:${b.nopeWindows.length})`);
-    process.exit(1);
+async function waitForClear(a: Client, ms: number): Promise<boolean> {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    if (!a.state?.pendingAction) return true;
+    await delay(100);
   }
-  const win = opponent.nopeWindows[0];
-  console.log(`NOPE_WINDOW_OPEN received: ${JSON.stringify(win)}`);
-  const playedTypes = (win.cards_played ?? [win.card_played]).map((c: any) => c.type);
-  if (playedTypes[0] !== cardName || typeof win.duration_ms === 'number') {
-    console.log('FAIL: nope window payload malformed');
-    process.exit(1);
+  return !a.state?.pendingAction;
+}
+
+async function main() {
+  console.log('=== Nope Window E2E (server-timed, no actor race) ===\n');
+
+  // ---- Scenario A: no eligible Nopers → instant resolve, no window ----
+  {
+    const { a, b } = await setupGame();
+    const { attacker, attackCard, opponent } = await findActionPlayable(a, b);
+    const opponentNope = opponent.has('nope');
+    console.log(`[A] ${attacker.name} will play ${attackCard.type}. Opponent ${opponent.name} ${opponentNope ? 'HAS' : 'has no'} Nope.`);
+
+    const winPromise = Promise.race([
+      attacker.waitFor('NOPE_WINDOW_OPEN', 3000),
+      delay(1800).then(() => null),
+    ]);
+    attacker.emit('PLAY_CARD', { card_id: attackCard.id });
+    let win: any = await winPromise;
+
+    if (!opponentNope) {
+      if (win !== null) {
+        console.log('FAIL: a window opened even though nobody can Nope', JSON.stringify(win));
+        process.exit(1);
+      }
+      if (!(await waitForClear(attacker, 2000))) {
+        console.log('FAIL: action with no eligible Nopers did not auto-resolve');
+        process.exit(1);
+      }
+      console.log('  no eligible Nopers → resolved instantly, no window opened. PASS');
+    } else {
+      if (!win) {
+        console.log('FAIL: NOPE_WINDOW_OPEN not received while opponent holds a Nope');
+        process.exit(1);
+      }
+      await delay(150);
+      if (typeof win.deadline !== 'number' || typeof win.duration_ms < 1000 ||
+          win.is_actor !== true || win.may_pass !== false || win.eligible_count !== 1) {
+        console.log('FAIL: nope window payload malformed', JSON.stringify(win));
+        process.exit(1);
+      }
+      const oppWin = opponent.nopeWindows[opponent.nopeWindows.length - 1];
+      if (!oppWin || oppWin.may_pass !== true || oppWin.eligible_count !== 1) {
+        console.log('FAIL: opponent window payload missing may_pass/eligible info');
+        process.exit(1);
+      }
+      console.log(`  window opened: deadline=${win.deadline} duration=${win.duration_ms}ms eligible=1`);
+      await waitForClear(attacker, 300);
+      if (!attacker.state?.pendingAction) {
+        console.log('FAIL: window auto-resolved while an eligible Noper has not acted');
+        process.exit(1);
+      }
+
+      // Guard: the actor must not be able to race the window by resolving.
+      attacker.emit('RESOLVE_NOPE');
+      await delay(400);
+      const guardErr = attacker.errors.find((e) => e.includes('Waiting for other players'));
+      if (!guardErr) {
+        console.log('FAIL: actor could race the window by resolving instantly');
+        process.exit(1);
+      }
+      const aErrs = attacker.errors.length;
+      const bErrs = opponent.errors.length;
+      console.log('  actor RESOLVE_NOPE rejected while a Noper is present. GOOD');
+
+      // Opponent passes → all eligible bowed out → instant resolution.
+      opponent.emit('PASS_NOPE');
+      if (!(await waitForClear(attacker, 6000))) {
+        console.log('FAIL: action did not resolve after all eligible players passed');
+        process.exit(1);
+      }
+      if (attacker.errors.length !== aErrs || opponent.errors.length !== bErrs) {
+        console.log('FAIL: unexpected errors during pass flow');
+        process.exit(1);
+      }
+      console.log('  PASS_NOPE → instant resolution (not cancelled). PASS');
+    }
+
+    const activeNow = a.state?.currentPlayerId === a.playerId ? a : b;
+    console.log(`  after: active=${activeNow.name}, obligations=${a.state?.drawObligations}`);
   }
 
-  let cancelled = false;
-  if (opponentNope) {
-    const ack = a.waitFor('GAME_STATE_UPDATE', 8000);
-    opponent.emit('PLAY_NOPE', { card_id: opponentNope.id });
-    await ack.catch(() => {});
-    cancelled = true;
-    console.log(`${opponent.name} played Nope — card cancelled.`);
-  } else {
-    console.log(`${opponent.name} has no Nope — waiting for ${attacker.name} to resolve.`);
+  // ---- Scenario B: eligible Noper idles → the 5s server timer resolves it ----
+  console.log('\n[B] Timer expiry (Noper idles):');
+  let expiryChecked = false;
+  for (let attempt = 1; attempt <= 3 && !expiryChecked; attempt++) {
+    const { a, b } = await setupGame();
+    const { attacker, attackCard, opponent } = await findActionPlayable(a, b);
+    const opponentNope = opponent.has('nope');
+    console.log(`  attempt ${attempt}: ${attacker.name} has ${attackCard.type}; opponent ${opponentNope ? 'HAS' : 'has no'} Nope`);
+    if (!opponentNope) continue;
+
+    const winPromise = Promise.race([
+      attacker.waitFor('NOPE_WINDOW_OPEN', 3000),
+      delay(1800).then(() => null),
+    ]);
+    attacker.emit('PLAY_CARD', { card_id: attackCard.id });
+    const win: any = await winPromise;
+    if (!win || typeof win.deadline !== 'number' || win.duration_ms < 1000) {
+      console.log('FAIL: window payload missing server countdown');
+      process.exit(1);
+    }
+
+    // Nobody acts — the countdown must resolve the action automatically.
+    if (!(await waitForClear(attacker, 6500))) {
+      console.log('FAIL: server timer never resolved the idle window');
+      process.exit(1);
+    }
+    const elapsedMs = Date.now() - (win.deadline - win.duration_ms);
+    if (elapsedMs < 4000) {
+      console.log(`FAIL: resolved too early (${elapsedMs}ms) — countdown ignored`);
+      process.exit(1);
+    }
+    expiryChecked = true;
+    console.log(`  idle window auto-resolved after ${elapsedMs}ms (≤ ~5s). PASS`);
+  }
+  if (!expiryChecked) {
+    console.log('  skipped — opponent never held a Nope in 3 attempts');
   }
 
-  const resolveAck = a.waitFor('GAME_STATE_UPDATE', 8000);
-  attacker.emit('RESOLVE_NOPE');
-  await resolveAck.catch(() => {});
-
-  const activeNow = a.state?.currentPlayerId === a.playerId ? a : b;
-  const obligations = a.state?.drawObligations;
-  console.log(`After resolution: active=${activeNow.name}, obligations=${obligations}`);
-
-  let pass = false;
-  if (cancelled) {
-    pass = activeNow === attacker && obligations >= 1;
-  } else if (cardName === 'attack') {
-    pass = activeNow === opponent && obligations === 2;
-  } else {
-    pass = activeNow === opponent;
-  }
-
-  console.log(pass ? 'PASS' : `CHECK — card=${cardName} cancelled=${cancelled} active=${activeNow.name} obligations=${obligations}`);
   console.log('\nDone.');
   process.exit(0);
 }

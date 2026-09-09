@@ -84,14 +84,24 @@ class TestClient {
     return this.hand.find((c) => c.type === type) || null;
   }
 
-  async playType(source: TestClient, type: string): Promise<void> {
+  async playType(source: TestClient, peers: TestClient[], type: string): Promise<void> {
     const before = Date.now();
     const card = source.hasCard(type);
     if (!card) return;
     source.emit('PLAY_CARD', { card_id: card.id });
-    await delay(200);
-    source.emit('RESOLVE_NOPE');
-    await delay(300);
+    await delay(250);
+    // The nope window is server-driven now: opponents holding a Nope pass
+    // immediately to expedite resolution; no-nope windows auto-resolve.
+    for (const other of peers) {
+      if (other !== source && other.hasCard('nope') && other.gameState?.pendingAction) {
+        other.emit('PASS_NOPE');
+      }
+    }
+    const end = Date.now() + 6000;
+    while (Date.now() < end) {
+      await delay(150);
+      if (!source.gameState?.pendingAction) break;
+    }
     console.log(
       `    ${source.name} played ${type} (${Date.now() - before}ms). Turn now: ${
         source.gameState?.currentPlayerId
@@ -155,7 +165,7 @@ async function main() {
     const current: TestClient = active;
     const skip = current.hasCard('skip');
     if (skip && current.currentPlayerIsMe) {
-      await current.playType(current, 'skip');
+      await current.playType(current, [alice, bob, carol], 'skip');
       console.log(`      → ${current.name} skipped. Next obligations: ${current.gameState?.drawObligations}`);
     } else {
       await current.draw();

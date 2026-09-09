@@ -69,7 +69,13 @@ export default function GamePage() {
   const [nopeWindow, setNopeWindow] = useState<{
     triggeringPlayer: string;
     cardsPlayed: Card[];
+    deadline: number | null;
+    mayPass: boolean;
+    isActor: boolean;
+    eligibleCount: number;
   } | null>(null);
+  const [nopePassed, setNopePassed] = useState<string[]>([]);
+  const [clockNow, setClockNow] = useState(0);
 
   const [explosionData, setExplosionData] = useState<ExplosionData | null>(null);
   const [insertIndex, setInsertIndex] = useState(0);
@@ -147,13 +153,32 @@ export default function GamePage() {
 
     s.on(
       'NOPE_WINDOW_OPEN',
-      (data: { triggering_player: string; card_played: Card; cards_played?: Card[] }) => {
+      (data: {
+        triggering_player: string;
+        card_played: Card;
+        cards_played?: Card[];
+        deadline?: number;
+        may_pass?: boolean;
+        is_actor?: boolean;
+        eligible_count?: number;
+      }) => {
+        setNopePassed([]);
         setNopeWindow({
           triggeringPlayer: data.triggering_player,
           cardsPlayed: data.cards_played ?? (data.card_played ? [data.card_played] : []),
+          deadline: data.deadline ?? null,
+          mayPass: !!data.may_pass,
+          isActor: !!data.is_actor,
+          eligibleCount: data.eligible_count ?? 0,
         });
       }
     );
+
+    s.on('NOPE_PASSED', (data: { player_id: string }) => {
+      setNopePassed((prev) =>
+        prev.includes(data.player_id) ? prev : [...prev, data.player_id]
+      );
+    });
 
     s.on('PRIVATE_FUTURE_VIEW', (data: FutureData) => {
       setFutureData(data);
@@ -196,6 +221,7 @@ export default function GamePage() {
       s.off('GAME_STATE_UPDATE');
       s.off('PRIVATE_HAND');
       s.off('NOPE_WINDOW_OPEN');
+      s.off('NOPE_PASSED');
       s.off('PRIVATE_FUTURE_VIEW');
       s.off('EXPLODED');
       s.off('FAVOR_REQUEST');
@@ -212,6 +238,14 @@ export default function GamePage() {
       setNopeWindow(null);
     }
   }, [gameState?.pendingAction, nopeWindow]);
+
+  // Local clock ticks to render the server-driven nope countdown
+  useEffect(() => {
+    if (!nopeWindow?.deadline) return;
+    setClockNow(Date.now());
+    const t = setInterval(() => setClockNow(Date.now()), 200);
+    return () => clearInterval(t);
+  }, [nopeWindow?.deadline]);
 
   // Track prompt transitions so we only close favor/defuse modals once the
 // server has actually moved past them (not while the prompt broadcast is
@@ -328,6 +362,11 @@ export default function GamePage() {
     socket.emit('RESOLVE_NOPE');
   };
 
+  const handlePassNope = () => {
+    if (!socket) return;
+    socket.emit('PASS_NOPE');
+  };
+
   const handleDefuse = () => {
     if (!socket || !explosionData) return;
     socket.emit('DEFUSE_BOMB', { insert_index: insertIndex });
@@ -368,6 +407,9 @@ export default function GamePage() {
 
   const myNopeCards = hand.filter((c) => c.type === 'nope');
   const amActingInNope = nopeWindow?.triggeringPlayer === myPlayerId;
+  const nopeRemainingSec = nopeWindow?.deadline
+    ? Math.max(0, Math.ceil((nopeWindow.deadline - clockNow) / 1000))
+    : 0;
 
   if (!gameState) {
     return (
@@ -611,6 +653,14 @@ export default function GamePage() {
               played {nopeWindow.cardsPlayed.map((c) => getCardInfo(c.type).label).join(' + ')}
             </p>
 
+            {nopeWindow.deadline ? (
+              <p className="text-2xl font-bold tabular-nums my-2">
+                ⏱ {nopeRemainingSec}s
+              </p>
+            ) : (
+              <p className="text-xs text-slate-500 italic my-2">No one can Nope</p>
+            )}
+
             <div className="flex justify-center gap-3 mb-6">
               {nopeWindow.cardsPlayed.map((c) => (
                 <GameCard key={c.id} card={c} small />
@@ -636,22 +686,42 @@ export default function GamePage() {
                 </>
               )}
 
-              {amActingInNope ? (
+              {nopeWindow.mayPass && (
+                <>
+                  <button
+                    onClick={handlePassNope}
+                    disabled={
+                      !nopeWindow.deadline || nopePassed.includes(myPlayerId ?? '')
+                    }
+                    className={`${primaryBtn} w-full bg-slate-100 text-slate-900 hover:bg-white mt-3 disabled:opacity-40 disabled:cursor-not-allowed`}
+                  >
+                    {nopePassed.includes(myPlayerId ?? '')
+                      ? '✓ You passed'
+                      : '✋ Pass — I have no Nope'}
+                  </button>
+                  <p className="text-xs text-slate-500">
+                    You may also play a Nope above, or the action resolves in{' '}
+                    {nopeRemainingSec}s.
+                  </p>
+                </>
+              )}
+
+              {amActingInNope && !nopeWindow.deadline ? (
                 <button
                   onClick={handleResolveNope}
                   className={`${primaryBtn} w-full bg-emerald-400 text-black shadow-[0_8px_24px_rgba(52,211,153,0.3)] hover:bg-emerald-300 mt-3`}
                 >
                   ✓ I'm done — resolve
                 </button>
-              ) : (
+              ) : !amActingInNope && !nopeWindow.mayPass ? (
                 <p className="text-xs text-slate-500 pt-3">
                   Waiting for{' '}
-                  <span className="text-slate-300">
-                    {playerNameMap[nopeWindow.triggeringPlayer] || 'their'}
-                  </span>{' '}
-                  to resolve...
+                  {nopeWindow.eligibleCount > 0
+                    ? `${nopeWindow.eligibleCount} player${nopeWindow.eligibleCount === 1 ? '' : 's'}`
+                    : playerNameMap[nopeWindow.triggeringPlayer] || 'their'}{' '}
+                  to Nope or pass...
                 </p>
-              )}
+              ) : null}
             </div>
           </div>
         </div>
