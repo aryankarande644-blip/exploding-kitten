@@ -40,7 +40,7 @@ async function main() {
   assert(restored.hostId === 'p1', `host lost: ${restored.hostId}`);
   assert(restored.players.has('p1') && restored.players.has('p2'), 'players lost');
   assert(restored.players.get('p1')!.name === 'Alice', 'player name lost');
-  assert(restored.gameState, 'gameState lost');
+  assert(!!restored.gameState, 'gameState lost');
   assert(restored.gameState!.deck.length === deckBefore, `deck changed: ${restored.gameState!.deck.length} != ${deckBefore}`);
   assert(restored.gameState!.drawObligations === obligationsBefore, 'obligations changed');
   assert(restored.gameState!.players[0].hand.length === handBefore, `hand changed: ${restored.gameState!.players[0].hand.length} != ${handBefore}`);
