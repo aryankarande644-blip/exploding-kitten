@@ -140,7 +140,8 @@ async function main() {
         process.exit(1);
       }
       await delay(150);
-      if (typeof win.deadline !== 'number' || typeof win.duration_ms < 1000 ||
+      if (typeof win.deadline !== 'number' || typeof win.duration_ms !== 'number' ||
+          win.duration_ms < 1000 ||
           win.is_actor !== true || win.may_pass !== false || win.eligible_count !== 1) {
         console.log('FAIL: nope window payload malformed', JSON.stringify(win));
         process.exit(1);

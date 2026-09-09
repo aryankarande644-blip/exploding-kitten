@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: exploding-kittens-server
+    runtime: node
+    plan: free
+    buildCommand: cd server && npm install --include=dev
+    startCommand: cd server && npm start
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: NODE_ENV
+        value: production
