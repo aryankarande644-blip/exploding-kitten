@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getSocket } from '@/lib/socket';
 import { LobbyState } from '@/lib/types';
@@ -8,39 +8,42 @@ import { Socket } from 'socket.io-client';
 
 export default function LobbyPage() {
   const router = useRouter();
-  const [connected, setConnected] = useState(false);
-  const [playerName, setPlayerName] = useState('');
+  const [name, setName] = useState('');
   const [roomCode, setRoomCode] = useState('');
+  const [message, setMessage] = useState('');
+  const [isError, setIsError] = useState(false);
+  const [connected, setConnected] = useState(false);
   const [myPlayerId, setMyPlayerId] = useState('');
   const [myRoomCode, setMyRoomCode] = useState('');
   const [isHost, setIsHost] = useState(false);
   const [lobby, setLobby] = useState<LobbyState | null>(null);
-  const [error, setError] = useState('');
   const [view, setView] = useState<'home' | 'lobby' | 'game'>('home');
 
   const socketRef = useRef<Socket | null>(null);
   const myPlayerIdRef = useRef('');
   const myRoomCodeRef = useRef('');
+  const nameRef = useRef('');
 
   useEffect(() => {
     const stored = localStorage.getItem('ek_session');
     if (stored) {
       try {
         const s = JSON.parse(stored);
-        setPlayerName(s.playerName || '');
+        if (s.playerName) setName(s.playerName);
       } catch {}
     }
   }, []);
 
   useEffect(() => {
     myPlayerIdRef.current = myPlayerId;
-  }, [myPlayerId]);
+    nameRef.current = name;
+  }, [myPlayerId, name]);
 
   useEffect(() => {
     myRoomCodeRef.current = myRoomCode;
   }, [myRoomCode]);
 
-  const setupSocket = useCallback(() => {
+  const setupSocket = () => {
     const s = getSocket();
     socketRef.current = s;
 
@@ -56,10 +59,11 @@ export default function LobbyPage() {
       setMyRoomCode(data.room_code);
       setIsHost(true);
       setView('lobby');
+      setMessage('');
       localStorage.setItem(`ek_session_${data.room_code}`, JSON.stringify({
         roomCode: data.room_code,
         playerId: data.player_id,
-        playerName: playerName,
+        playerName: nameRef.current,
       }));
     });
 
@@ -68,10 +72,11 @@ export default function LobbyPage() {
       setMyRoomCode(data.room_code);
       setIsHost(false);
       setView('lobby');
+      setMessage('');
       localStorage.setItem(`ek_session_${data.room_code}`, JSON.stringify({
         roomCode: data.room_code,
         playerId: data.player_id,
-        playerName: playerName,
+        playerName: nameRef.current,
       }));
     });
 
@@ -94,8 +99,9 @@ export default function LobbyPage() {
     });
 
     s.on('ERROR', (data: { message: string }) => {
-      setError(data.message);
-      setTimeout(() => setError(''), 4000);
+      setMessage(data.message);
+      setIsError(true);
+      setTimeout(() => setIsError(false), 4000);
     });
 
     s.on('GAME_STATE_UPDATE', () => {
@@ -113,120 +119,135 @@ export default function LobbyPage() {
       s.off('ERROR');
       s.off('GAME_STATE_UPDATE');
     };
-  }, [playerName, router]);
+  };
 
   useEffect(() => {
     const cleanup = setupSocket();
     return cleanup;
-  }, [setupSocket]);
+  }, []);
 
-  const handleCreateRoom = () => {
-    if (!playerName.trim()) {
-      setError('Enter your name');
+  function handleCreateRoom(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!name.trim()) {
+      setMessage('Enter your name to create a room.');
+      setIsError(true);
       return;
     }
-    setError('');
-    socketRef.current?.emit('CREATE_ROOM', { player_name: playerName.trim() });
-  };
+    if (!connected) {
+      setMessage('Connecting to game server, try again in a second…');
+      setIsError(true);
+      return;
+    }
+    setMessage('');
+    setIsError(false);
+    socketRef.current?.emit('CREATE_ROOM', { player_name: name.trim() });
+  }
 
-  const handleJoinRoom = () => {
-    if (!playerName.trim()) {
-      setError('Enter your name');
+  function handleJoinRoom() {
+    const code = roomCode.trim().toUpperCase();
+    if (!name.trim()) {
+      setMessage('Enter your name to join a room.');
+      setIsError(true);
       return;
     }
-    if (!roomCode.trim()) {
-      setError('Enter a room code');
+    if (!code) {
+      setMessage('Enter a room code to join.');
+      setIsError(true);
       return;
     }
-    setError('');
+    if (!connected) {
+      setMessage('Connecting to game server, try again in a second…');
+      setIsError(true);
+      return;
+    }
+    setMessage('');
+    setIsError(false);
     socketRef.current?.emit('JOIN_ROOM', {
-      room_code: roomCode.trim().toUpperCase(),
-      player_name: playerName.trim(),
+      room_code: code,
+      player_name: name.trim(),
     });
-  };
+  }
 
   const handleStartGame = () => {
     socketRef.current?.emit('START_GAME');
   };
 
-  return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-b from-[#161b2e] to-[#0b0e18]">
-      <div className="w-full max-w-lg">
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold mb-2 tracking-tight">
-            <span className="mr-2">🐱</span>Exploding Kittens
-          </h1>
-          <p className="text-slate-400 text-sm">The card game for people who are into kittens</p>
-          <div className="flex items-center justify-center gap-2 mt-3">
-            <div className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-400' : 'bg-rose-400'}`} />
-            <span className="text-xs text-slate-500">{connected ? 'Connected' : 'Connecting...'}</span>
-          </div>
+  if (view === 'home') {
+    return (
+      <main className="lobby-shell">
+        <div className="scene-art" aria-hidden="true">
+          <div className="moon" />
+          <div className="window"><span /><span /><span /></div>
+          <div className="wall-poster poster-left">KITTENS<br />CARDS<br />CHAOS<br />FRIENDS<br /><b>♡</b></div>
+          <div className="wall-poster poster-center">EXPLODING<br />KITTENS<div className="poster-cat">●ᴥ●</div></div>
+          <div className="wall-poster poster-right">Good Kittens.<br />Bad Luck.<br /><b>♡</b></div>
+          <div className="checklist">☑ Play<br />☑ Betray<br />☑ Explode<br />☑ Repeat<br /><span>ฅ^•ﻌ•^ฅ</span></div>
+          <div className="table-scene"><div className="card-stack"><b>EXPLODING<br />KITTENS</b></div><div className="game-card green">DEFUSE<div>●ᴥ●</div></div><div className="game-card blue">SKIP<div>⌁ᴥ⌁</div></div></div>
+          <div className="kitten-box"><div className="kitten">◕ᴥ◕</div><span>DANGER<br />CUTE KITTENS<br />INSIDE</span></div>
+          <div className="sleeping-cat">⌣ᴥ⌣<i>z z z</i></div>
+          <div className="mug">SAME<br />KITTENS<br />DIFFERENT<br />VICTIMS<br />♡</div>
         </div>
+        <div className="scene-vignette" aria-hidden="true" />
 
-        {error && (
-          <div className="bg-rose-950/80 border border-rose-700/40 rounded-full p-3 mb-4 text-center text-sm text-rose-200 animate-fade-in">
-            {error}
-          </div>
-        )}
-
-        {view === 'home' && (
-          <div className="bg-[#171c30]/95 rounded-3xl p-8 border border-white/10 shadow-2xl">
-            <div className="mb-6">
-              <label className="block text-sm text-slate-400 mb-2">Your Name</label>
-              <input
-                type="text"
-                value={playerName}
-                onChange={(e) => setPlayerName(e.target.value)}
-                placeholder="Enter your name..."
-                maxLength={20}
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-400/60 focus:border-transparent text-base"
-              />
+        <section className="lobby-content" aria-label="Exploding Kittens game lobby">
+          <header className="brand-block">
+            <div className="brand-title" aria-label="Exploding Kittens">
+              <span>EXPLODING</span>
+              <strong>KITTENS<sup>™</sup></strong>
             </div>
+            <p className="tagline">The card game for people who are into kittens<br /><em>(and occasional explosions).</em></p>
+            <div className="paw-row" aria-hidden="true"><span>✦</span><i>●●</i><span>✦</span></div>
+          </header>
 
-            <button
-              onClick={handleCreateRoom}
-              disabled={!connected}
-              className="w-full h-12 rounded-full bg-amber-400 hover:bg-amber-300 text-black font-semibold text-base transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed mb-4 shadow-[0_8px_24px_rgba(251,191,36,0.25)]"
-            >
+          <form className="lobby-card" onSubmit={handleCreateRoom}>
+            <label className="field name-field">
+              <span className="field-icon" aria-hidden="true">♙</span>
+              <span className="sr-only">Your name</span>
+              <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Enter your name..." maxLength={24} />
+            </label>
+
+            <button className="create-button" type="submit" disabled={!connected}>
+              <span className="people-icon" aria-hidden="true">♟♟♟</span>
               Create Room
             </button>
 
-            <div className="relative my-6">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-white/5" />
-              </div>
-              <div className="relative flex justify-center">
-                <span className="bg-[#171c30] px-4 text-slate-500 text-xs uppercase tracking-widest">
-                  or join existing
-                </span>
-              </div>
-            </div>
+            <div className="or-divider"><span>OR</span></div>
 
-            <div className="flex gap-3">
-              <input
-                type="text"
-                value={roomCode}
-                onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-                placeholder="Room code"
-                maxLength={4}
-                className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-400/60 focus:border-transparent text-center tracking-[0.3em] uppercase font-mono"
-              />
-              <button
-                onClick={handleJoinRoom}
-                disabled={!connected}
-                className="h-12 bg-white/10 hover:bg-white/15 border border-white/10 font-semibold px-6 rounded-xl transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                Join
-              </button>
+            <div className="join-row">
+              <label className="field code-field">
+                <span className="field-icon" aria-hidden="true">⌕</span>
+                <span className="sr-only">Room code</span>
+                <input value={roomCode} onChange={(event) => setRoomCode(event.target.value.toUpperCase())} placeholder="R O O M  C O D E" maxLength={4} />
+              </label>
+              <button className="join-button" type="button" onClick={handleJoinRoom} disabled={!connected}>Join</button>
             </div>
-          </div>
-        )}
+            <p className={`status${isError ? ' error' : ''}`} role="status" aria-live="polite">
+              {message || (connected ? '' : 'Connecting to game server…')}
+            </p>
+          </form>
+        </section>
+      </main>
+    );
+  }
 
-        {view === 'lobby' && lobby && (
-          <div className="bg-[#171c30]/95 rounded-3xl p-8 border border-white/10 shadow-2xl animate-fade-in">
+  if (view === 'lobby' && lobby) {
+    return (
+      <main className="lobby-shell">
+        <div className="scene-art" aria-hidden="true" />
+        <div className="scene-vignette" aria-hidden="true" />
+
+        <section className="lobby-content" aria-label="Exploding Kittens game lobby">
+          <header className="brand-block">
+            <div className="brand-title" aria-label="Exploding Kittens">
+              <span>EXPLODING</span>
+              <strong>KITTENS<sup>™</sup></strong>
+            </div>
+          </header>
+
+          <div className="lobby-card animate-fade-in">
             <div className="text-center mb-6">
-              <p className="text-slate-400 text-xs uppercase tracking-widest mb-1">Room Code</p>
-              <div className="text-4xl font-mono font-bold text-amber-300 tracking-[0.3em]">{myRoomCode}</div>
+              <p className="text-slate-400 text-xs uppercase tracking-widest mb-2">Room Code</p>
+              <div className="text-4xl font-mono font-bold text-amber-300 tracking-[0.35em]">{myRoomCode}</div>
               <p className="text-slate-500 text-xs mt-2">Share this code with friends</p>
             </div>
 
@@ -241,7 +262,7 @@ export default function LobbyPage() {
                     className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-2.5"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-500/90 to-orange-600/90 flex items-center justify-center text-sm font-bold">
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-500/90 to-orange-600/90 flex items-center justify-center text-sm font-bold text-black">
                         {p.name.charAt(0).toUpperCase()}
                       </div>
                       <span className="font-medium text-sm">{p.name}</span>
@@ -271,9 +292,17 @@ export default function LobbyPage() {
                 Waiting for host to start the game...
               </div>
             )}
+
+            {message && (
+              <p className={`status${isError ? ' error' : ''} text-center`} role="status" aria-live="polite">
+                {message}
+              </p>
+            )}
           </div>
-        )}
-      </div>
-    </div>
-  );
+        </section>
+      </main>
+    );
+  }
+
+  return null;
 }
