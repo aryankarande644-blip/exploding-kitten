@@ -47,7 +47,10 @@ async function main() {
 
   const alice = new TC('Alice');
   const bob = new TC('Bob');
-  await Promise.all([new Promise((r) => alice.socket.on('connect', r)), new Promise((r) => bob.socket.on('connect', r))]);
+  await Promise.all([
+    new Promise<void>((r) => alice.socket.on('connect', () => r())),
+    new Promise<void>((r) => bob.socket.on('connect', () => r())),
+  ]);
 
   const created = alice.waitFor('ROOM_CREATED');
   alice.socket.emit('CREATE_ROOM', { player_name: 'Alice' });

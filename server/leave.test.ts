@@ -5,6 +5,7 @@ const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 class TC {
   socket: Socket;
+  name: string;
   playerId: string | null = null;
   roomCode: string | null = null;
   hand: any[] = [];
@@ -12,6 +13,7 @@ class TC {
   left = false;
 
   constructor(name: string) {
+    this.name = name;
     this.socket = io(SERVER_URL, { transports: ['websocket'], reconnection: false });
     this.socket.on('GAME_STATE_UPDATE', (d: any) => (this.gameState = d));
     this.socket.on('PRIVATE_HAND', (d: any) => (this.hand = d.hand));
@@ -29,7 +31,10 @@ class TC {
 async function main() {
   const alice = new TC('Alice');
   const bob = new TC('Bob');
-  await Promise.all([new Promise((r) => alice.socket.on('connect', r)), new Promise((r) => bob.socket.on('connect', r))]);
+  await Promise.all([
+    new Promise<void>((r) => alice.socket.on('connect', () => r())),
+    new Promise<void>((r) => bob.socket.on('connect', () => r())),
+  ]);
 
   const created = alice.waitFor('ROOM_CREATED');
   alice.socket.emit('CREATE_ROOM', { player_name: 'Alice' });

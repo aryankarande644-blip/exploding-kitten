@@ -27,6 +27,12 @@ export interface PendingAction {
   resolved: boolean;
 }
 
+export interface ActivityEntry {
+  id: string;
+  text: string;
+  ts: number;
+}
+
 export interface ClientGameState {
   players: { id: string; name: string; alive: boolean; cardCount: number }[];
   deckCount: number;
@@ -38,6 +44,7 @@ export interface ClientGameState {
   pendingPrompt: 'favor' | 'defuse' | null;
   status: 'waiting' | 'in_progress' | 'finished';
   winnerId: string | null;
+  activity: ActivityEntry[];
 }
 
 export interface ClientPlayerState extends ClientGameState {

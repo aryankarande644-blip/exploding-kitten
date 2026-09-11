@@ -34,6 +34,7 @@ export function toSavedRoom(room: RoomState) {
       socketId: info.socketId,
       name: info.name,
     })),
+    activity: room.activity,
   };
 }
 
@@ -52,6 +53,14 @@ export function fromSavedRoom(saved: any): RoomState {
     nopeTimer: null,
     nopePassed: new Set(),
     nopeWindowDeadline: null,
+    activity: Array.isArray(saved.activity)
+      ? saved.activity.map((a: any) => ({
+          id: typeof a.id === 'string' ? a.id : String(Math.random()),
+          text: typeof a.text === 'string' ? a.text : '',
+          ts: typeof a.ts === 'number' ? a.ts : Date.now(),
+        }))
+      : [],
+    gameOverLogged: false,
   };
 }
 

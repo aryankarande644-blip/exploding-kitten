@@ -39,6 +39,7 @@ export function broadcastGameState(io: Server, room: RoomState): void {
           : null,
       status: state.status,
       winnerId: state.winnerId,
+      activity: room.activity,
     };
 
     playerSocket.emit('GAME_STATE_UPDATE', publicState);
@@ -80,6 +81,7 @@ export function broadcastPublicState(io: Server, room: RoomState): void {
         : null,
     status: state.status,
     winnerId: state.winnerId,
+    activity: room.activity,
   };
 
   for (const [, info] of room.players) {

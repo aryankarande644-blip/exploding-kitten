@@ -383,6 +383,11 @@ export default function GamePage() {
     socket.emit('PASS_NOPE');
   };
 
+  const handleSkipTimer = () => {
+    if (!socket) return;
+    socket.emit('SKIP_ACTION_TIMER');
+  };
+
   const handleDefuse = () => {
     if (!socket || !explosionData) return;
     socket.emit('DEFUSE_BOMB', { insert_index: insertIndex });
@@ -629,6 +634,23 @@ export default function GamePage() {
           </p>
         </div>
 
+        {/* Game log */}
+        <div className="absolute left-2 sm:left-4 bottom-4 z-30 w-52 max-h-[38vh] bg-black/50 border border-white/10 rounded-2xl backdrop-blur-md p-2.5 flex flex-col pointer-events-auto">
+          <span className="text-[9px] uppercase tracking-widest text-amber-300/80 font-black mb-1.5">
+            Game Log
+          </span>
+          <ul className="space-y-1.5 overflow-y-auto pr-1 text-[11px] leading-snug flex-1">
+            {(gameState.activity ?? []).length === 0 && (
+              <li className="text-gray-500 italic">No events yet</li>
+            )}
+            {(gameState.activity ?? []).slice().reverse().map((e) => (
+              <li key={e.id} className="text-gray-300 border-b border-white/5 pb-1.5 last:border-0 last:pb-0">
+                {e.text}
+              </li>
+            ))}
+          </ul>
+        </div>
+
         {/* Poker table */}
         <div className="poker-table relative w-full max-w-6xl h-[60vh] max-h-[540px] min-h-[320px] flex items-center justify-center mx-auto shadow-2xl">
           {/* Opponents */}
@@ -656,12 +678,19 @@ export default function GamePage() {
               >
                 {vertical ? (
                   <div className="flex flex-row items-center gap-2 sm:gap-3">
-                    <div className="flex flex-col items-center text-center bg-black/50 border border-white/10 p-2 rounded-2xl backdrop-blur-sm shadow-lg">
+                    <div className="relative flex flex-col items-center text-center bg-black/50 border border-white/10 p-2 rounded-2xl backdrop-blur-sm shadow-lg">
+                      {isCurrent && (
+                        <span className="absolute -top-3 left-1/2 -translate-x-1/2 text-[8px] font-black tracking-widest bg-amber-400 text-black rounded-full px-2 py-0.5 shadow animate-pulse uppercase z-10 whitespace-nowrap">
+                          TURN
+                        </span>
+                      )}
                       <div
-                        className={`relative w-9 h-9 sm:w-10 sm:h-10 rounded-full ${avatarCls} ${borderCls} border-2 flex items-center justify-center font-bold text-sm sm:text-base text-white shadow-md ${ringCls}`}
+                        className={`relative w-9 h-9 sm:w-10 sm:h-10 rounded-full ${avatarCls} ${borderCls} border-2 flex items-center justify-center font-bold text-sm sm:text-base text-white shadow-md ${ringCls} transition-transform ${isCurrent ? 'scale-110 shadow-amber-400/30 shadow-lg' : ''}`}
                       >
+                        {isCurrent && (
+                          <span className="absolute inset-[-3px] rounded-full bg-amber-400/30 animate-ping pointer-events-none" />
+                        )}
                         {p.name.charAt(0).toUpperCase()}
-                        {isCurrent && <span className="absolute -top-2 -right-2 text-xs">👑</span>}
                       </div>
                       <span
                         className={`text-xs font-bold mt-1.5 ${
@@ -681,9 +710,17 @@ export default function GamePage() {
                 ) : (
                   <div className="flex flex-col items-center">
                     <div className="relative flex items-center gap-2 bg-black/60 px-3 sm:px-4 py-1.5 rounded-full border border-white/10 shadow-lg backdrop-blur-md">
+                      {isCurrent && (
+                        <span className="absolute -top-3 left-1/2 -translate-x-1/2 text-[8px] font-black tracking-widest bg-amber-400 text-black rounded-full px-2 py-0.5 shadow animate-pulse uppercase z-10 whitespace-nowrap">
+                          TURN
+                        </span>
+                      )}
                       <div
-                        className={`relative w-7 h-7 sm:w-8 sm:h-8 rounded-full ${avatarCls} ${borderCls} border-2 flex items-center justify-center font-black text-xs sm:text-sm text-white shadow ${ringCls}`}
+                        className={`relative w-7 h-7 sm:w-8 sm:h-8 rounded-full ${avatarCls} ${borderCls} border-2 flex items-center justify-center font-black text-xs sm:text-sm text-white shadow ${ringCls} transition-transform ${isCurrent ? 'scale-110 shadow-amber-400/30 shadow-lg' : ''}`}
                       >
+                        {isCurrent && (
+                          <span className="absolute inset-[-2px] rounded-full bg-amber-400/30 animate-ping pointer-events-none" />
+                        )}
                         {p.name.charAt(0).toUpperCase()}
                       </div>
                       <span
@@ -696,7 +733,6 @@ export default function GamePage() {
                       <span className="text-[10px] text-gray-400 block leading-none hidden sm:block">
                         {isOut ? 'out' : `${p.cardCount} cards`}
                       </span>
-                      {isCurrent && <span className="absolute -top-1 right-0 text-xs">👑</span>}
                     </div>
                     <div className="flex items-center -space-x-5 mt-2">
                       {renderCardBacks(p.cardCount, false)}
@@ -927,6 +963,15 @@ export default function GamePage() {
                 </span>
               )}
             </div>
+          )}
+
+          {gameState.pendingAction && (
+            <button
+              onClick={handleSkipTimer}
+              className="inline-flex items-center gap-1.5 bg-white/10 hover:bg-white/15 text-white font-bold text-xs tracking-wide px-4 py-2 rounded-full border border-white/10 shadow-lg backdrop-blur-sm transition-colors"
+            >
+              Skip Timer
+            </button>
           )}
 
           {canDrawNow && (

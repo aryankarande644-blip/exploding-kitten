@@ -7,6 +7,12 @@ export interface PlayerInfo {
   name: string;
 }
 
+export interface ActivityEntry {
+  id: string;
+  text: string;
+  ts: number;
+}
+
 export interface RoomState {
   code: string;
   gameState: GameState | null;
@@ -17,6 +23,8 @@ export interface RoomState {
   nopeTimer: ReturnType<typeof setTimeout> | null;
   nopePassed: Set<string>;
   nopeWindowDeadline: number | null;
+  activity: ActivityEntry[];
+  gameOverLogged: boolean;
 }
 
 const rooms = new Map<string, RoomState>();
@@ -50,6 +58,8 @@ export function createRoom(
     nopeTimer: null,
     nopePassed: new Set<string>(),
     nopeWindowDeadline: null,
+    activity: [],
+    gameOverLogged: false,
   };
   rooms.set(roomCode, room);
   return { roomCode, room };

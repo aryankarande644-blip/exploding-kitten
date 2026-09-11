@@ -36,6 +36,30 @@ import {
 } from './broadcast.js';
 
 const NOPE_WINDOW_MS = 36000;
+const ACTIVITY_LIMIT = 60;
+
+const CARD_LABELS: Record<string, string> = {
+  skip: 'Skip',
+  shuffle: 'Shuffle',
+  see_future: 'See the Future',
+  favor: 'Favor',
+  attack: 'Attack',
+  nope: 'Nope',
+  defuse: 'Defuse',
+  exploding_kitten: 'Exploding Kitten',
+};
+
+function playerName(room: RoomState, playerId: string | null | undefined): string {
+  if (!playerId) return 'Someone';
+  return room.players.get(playerId)?.name ?? 'Someone';
+}
+
+function logActivity(room: RoomState, text: string): void {
+  room.activity.push({ id: crypto.randomUUID(), text, ts: Date.now() });
+  if (room.activity.length > ACTIVITY_LIMIT) {
+    room.activity.splice(0, room.activity.length - ACTIVITY_LIMIT);
+  }
+}
 
 function clearNopeTimer(room: RoomState): void {
   if (room.nopeTimer) {
@@ -64,6 +88,12 @@ function eligibleNopePlayerIds(room: RoomState): string[] {
 function emitGameOver(io: Server, room: RoomState): void {
   const state = room.gameState;
   if (!state || state.status !== 'finished') return;
+  if (!room.gameOverLogged) {
+    if (state.winnerId) {
+      room.gameOverLogged = true;
+      logActivity(room, `🏆 ${playerName(room, state.winnerId)} won the game!`);
+    }
+  }
   clearNopeTimer(room);
   for (const [, info] of room.players) {
     const s = io.sockets.sockets.get(info.socketId);
@@ -135,6 +165,11 @@ function resolveNopeAction(io: Server, room: RoomState): void {
   const targetPlayerId = action.targetPlayerId;
   const wasCancelled = action.nopeStack.length % 2 === 1;
 
+  const attackVictim =
+    actionType === 'attack' && !wasCancelled
+      ? nextAlivePlayer(room.gameState)
+      : null;
+
   const isFavor = actionType === 'favor' && !wasCancelled && targetPlayerId;
   const isSeeFuture = actionType === 'see_future' && !wasCancelled;
 
@@ -143,6 +178,55 @@ function resolveNopeAction(io: Server, room: RoomState): void {
     : null;
 
   resolvePendingAction(room.gameState);
+
+  const sourceName = playerName(room, sourcePlayerId);
+  const label = CARD_LABELS[actionType] ?? actionType;
+
+  if (wasCancelled) {
+    logActivity(room, `${sourceName}'s ${label} was Noped!`);
+  } else {
+    switch (actionType) {
+      case 'attack':
+        logActivity(room, `${sourceName} attacked ${playerName(room, attackVictim?.id)}`);
+        break;
+      case 'favor':
+        logActivity(
+          room,
+          `${sourceName} demanded a card from ${playerName(room, targetPlayerId)}`
+        );
+        break;
+      case 'see_future':
+        logActivity(room, `${sourceName} peeked at the top 3 cards of the deck`);
+        break;
+      case 'shuffle':
+        logActivity(room, `${sourceName} shuffled the deck`);
+        break;
+      case 'skip':
+        logActivity(room, `${sourceName} played Skip`);
+        break;
+      default:
+        if (actionType.startsWith('cat_')) {
+          if (action.cards.length === 5) {
+            logActivity(room, `${sourceName} used a cat quintuple to steal a discard`);
+          } else if (action.cards.length === 3) {
+            const named =
+              CARD_LABELS[action.namedCardType ?? ''] ??
+              action.namedCardType ??
+              'card';
+            logActivity(
+              room,
+              `${sourceName} stole a ${named} from ${playerName(room, targetPlayerId)}`
+            );
+          } else {
+            logActivity(
+              room,
+              `${sourceName} stole a card from ${playerName(room, targetPlayerId)}`
+            );
+          }
+        }
+        break;
+    }
+  }
 
   if (isSeeFuture && futureCards) {
     sendFutureView(io, room, sourcePlayerId, futureCards);
@@ -289,6 +373,10 @@ export function setupSocketHandlers(io: Server): void {
 
         startGame(roomCode);
 
+        logActivity(room, 'Game started — good luck, kittens!');
+        const firstKey = Array.from(room.players.keys())[0];
+        if (firstKey) logActivity(room, `${playerName(room, firstKey)} goes first`);
+
         broadcastGameState(io, room);
       } catch (e: any) {
         socket.emit('ERROR', { message: e.message });
@@ -305,6 +393,7 @@ export function setupSocketHandlers(io: Server): void {
           const { room, roomCode, playerId } = ctx;
           const state = room.gameState;
           const inProgress = state?.status === 'in_progress';
+          const leaverName = room.players.get(playerId)?.name ?? 'Someone';
 
           if (inProgress && state!.pendingAction && state!.pendingAction.sourcePlayerId === playerId) {
             resolveNopeAction(io, room);
@@ -346,6 +435,10 @@ if (gs && gs.status === 'in_progress') {
 
           if (gs && gs.pendingAction) {
             openNopeWindow(io, room);
+          }
+
+          if (room.gameState) {
+            logActivity(room, `${leaverName} left the game`);
           }
 
           room.players.delete(playerId);
@@ -423,6 +516,36 @@ if (gs && gs.status === 'in_progress') {
             data.named_card_type
           );
 
+          const sourceName = playerName(room, playerId);
+          const targetName = data.target_player_id
+            ? playerName(room, data.target_player_id)
+            : null;
+          if (cards.length === 2) {
+            logActivity(
+              room,
+              targetName
+                ? `${sourceName} played 2 cat cards on ${targetName}`
+                : `${sourceName} played 2 cat cards`
+            );
+          } else if (cards.length === 3) {
+            logActivity(
+              room,
+              targetName
+                ? `${sourceName} played 3 cat cards on ${targetName}`
+                : `${sourceName} played 3 cat cards`
+            );
+          } else if (cards.length === 5) {
+            logActivity(room, `${sourceName} played a cat quintuple`);
+          } else {
+            const label = CARD_LABELS[cards[0].type] ?? cards[0].type;
+            logActivity(
+              room,
+              targetName
+                ? `${sourceName} played ${label} on ${targetName}`
+                : `${sourceName} played ${label}`
+            );
+          }
+
           broadcastGameState(io, room);
 
           openNopeWindow(io, room);
@@ -448,6 +571,17 @@ if (gs && gs.status === 'in_progress') {
         if (!player.alive) throw new Error('Player is eliminated');
 
         playNope(state, playerId);
+
+        const nopeAction = state.pendingAction;
+        const nopedLabel =
+          CARD_LABELS[nopeAction.cards[0]?.type] ?? nopeAction.cards[0]?.type ?? 'card';
+        logActivity(
+          room,
+          `${playerName(room, playerId)} played Nope on ${playerName(
+            room,
+            nopeAction.sourcePlayerId
+          )}'s ${nopedLabel}`
+        );
 
         openNopeWindow(io, room);
 
@@ -525,6 +659,24 @@ if (gs && gs.status === 'in_progress') {
       }
     });
 
+    socket.on('SKIP_ACTION_TIMER', () => {
+      try {
+        const ctx = getContext(socket);
+        if (!ctx) throw new Error('Not in a room');
+
+        const { room } = ctx;
+        const state = room.gameState;
+        if (!state) throw new Error('Game not started');
+        if (state.status !== 'in_progress')
+          throw new Error('Game not in progress');
+        if (!state.pendingAction) throw new Error('No action timer to skip');
+
+        resolveNopeAction(io, room);
+      } catch (e: any) {
+        socket.emit('ERROR', { message: e.message });
+      }
+    });
+
     socket.on('DRAW_CARD', () => {
       try {
         const ctx = getContext(socket);
@@ -559,13 +711,22 @@ if (gs && gs.status === 'in_progress') {
         if (topCard.type === 'exploding_kitten') {
           const kitten = state.deck.shift()!;
           const hasDefuse = player.hand.some((c) => c.type === 'defuse');
+          const playerDisplay = playerName(room, playerId);
 
           if (!hasDefuse) {
+            logActivity(
+              room,
+              `💥 ${playerDisplay} drew an Exploding Kitten and exploded!`
+            );
             handleExplosionWithIndex(state, player, kitten, 0);
             broadcastGameState(io, room);
 
             emitGameOver(io, room);
           } else {
+            logActivity(
+              room,
+              `💥 ${playerDisplay} drew an Exploding Kitten!`
+            );
             room.pendingDefuse = { playerId, kitten };
             socket.emit('EXPLODED', {
               card: { id: kitten.id, type: kitten.type },
@@ -574,6 +735,7 @@ if (gs && gs.status === 'in_progress') {
             broadcastGameState(io, room);
           }
         } else {
+          logActivity(room, `${playerName(room, playerId)} drew a card`);
           drawCard(state);
           broadcastGameState(io, room);
 
@@ -600,6 +762,8 @@ if (gs && gs.status === 'in_progress') {
         const player = getPlayer(state, playerId);
 
         room.pendingDefuse = null;
+
+        logActivity(room, `🛡️ ${playerName(room, playerId)} defused an Exploding Kitten`);
 
         const insertIndex = Math.max(
           0,
@@ -632,6 +796,14 @@ if (gs && gs.status === 'in_progress') {
         room.pendingFavor = null;
 
         completeFavor(state, targetPlayerId, sourcePlayerId, data.card_id);
+
+        logActivity(
+          room,
+          `${playerName(room, targetPlayerId)} gave a card to ${playerName(
+            room,
+            sourcePlayerId
+          )}`
+        );
 
         broadcastGameState(io, room);
       } catch (e: any) {
