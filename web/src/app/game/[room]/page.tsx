@@ -536,26 +536,6 @@ export default function GamePage() {
     return backs;
   };
 
-  const formatLogTime = (ts: number) =>
-    new Date(ts).toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    });
-
-  const logLineClass = (text: string) => {
-    if (text.includes('🏆')) return 'text-amber-300 font-semibold';
-    if (text.includes('💥') || text.includes('Nope')) return 'text-rose-300';
-    if (
-      text.includes('attacked') ||
-      text.includes('stole') ||
-      text.includes('demanded') ||
-      text.includes('hit')
-    ) return 'text-orange-200';
-    if (text.includes('left the game')) return 'text-white/40 italic';
-    return 'text-white/80';
-  };
-
   return (
     <div className="h-screen w-full flex flex-col overflow-hidden bg-game-bg text-white relative font-sans select-none">
       {/* Ambient lamp glow */}
@@ -567,37 +547,6 @@ export default function GamePage() {
           {error}
         </div>
       )}
-
-      {/* ===== Game log overlay ===== */}
-      <div className="fixed left-3 sm:left-4 bottom-3 sm:bottom-4 z-[70] w-60 sm:w-64 rounded-2xl border border-white/10 bg-[#16100e]/90 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.55)] overflow-hidden flex flex-col pointer-events-auto">
-        <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-white/10 bg-white/[0.04]">
-          <div className="flex items-center gap-2">
-            <span className="relative flex w-2 h-2">
-              <span className="absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-60 animate-ping" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-400" />
-            </span>
-            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-300/90">
-              Game Log
-            </span>
-          </div>
-          <span className="text-[10px] font-bold text-white/40 tabular-nums">
-            {(gameState.activity ?? []).length}
-          </span>
-        </div>
-        <ul className="flex-1 max-h-[28vh] overflow-y-auto px-3 py-2 space-y-1.5 text-[11px] leading-snug">
-          {(gameState.activity ?? []).length === 0 && (
-            <li className="text-white/35 italic py-1">No events yet…</li>
-          )}
-          {(gameState.activity ?? []).slice().reverse().map((e) => (
-            <li key={e.id} className="flex items-start gap-1.5">
-              <span className="text-[9px] text-white/30 tabular-nums mt-0.5 flex-none">
-                {formatLogTime(e.ts)}
-              </span>
-              <span className={logLineClass(e.text)}>{e.text}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
 
       {/* ===== Top navigation ===== */}
       <header className="relative z-40 w-full px-4 sm:px-6 py-3 flex items-center justify-between border-b border-white/5 bg-black/40 backdrop-blur-md gap-3">
@@ -706,6 +655,23 @@ export default function GamePage() {
           <p className="text-[11px] sm:text-xs text-gray-300 text-center bg-black/40 px-4 py-1 rounded-full border border-white/5 backdrop-blur-sm truncate">
             {statusText}
           </p>
+        </div>
+
+        {/* Game log */}
+        <div className="absolute left-2 sm:left-4 bottom-4 z-30 w-52 max-h-[38vh] bg-black/50 border border-white/10 rounded-2xl backdrop-blur-md p-2.5 flex flex-col pointer-events-auto">
+          <span className="text-[9px] uppercase tracking-widest text-amber-300/80 font-black mb-1.5">
+            Game Log
+          </span>
+          <ul className="space-y-1.5 overflow-y-auto pr-1 text-[11px] leading-snug flex-1">
+            {(gameState.activity ?? []).length === 0 && (
+              <li className="text-gray-500 italic">No events yet</li>
+            )}
+            {(gameState.activity ?? []).slice().reverse().map((e) => (
+              <li key={e.id} className="text-gray-300 border-b border-white/5 pb-1.5 last:border-0 last:pb-0">
+                {e.text}
+              </li>
+            ))}
+          </ul>
         </div>
 
         {/* Poker table */}
