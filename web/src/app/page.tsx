@@ -24,14 +24,20 @@ export default function LobbyPage() {
   const myRoomCodeRef = useRef('');
   const nameRef = useRef('');
 
+  const getUsernameCookie = (): string => {
+    const m = document.cookie.match(/(?:^|;\s*)ek_username=([^;]+)/);
+    return m ? decodeURIComponent(m[1]) : '';
+  };
+
+  const setUsernameCookie = (value: string) => {
+    const safe = encodeURIComponent(value.trim());
+    const expires = new Date(Date.now() + 365 * 2 * 86400000).toUTCString();
+    document.cookie = `ek_username=${safe}; expires=${expires}; path=/; SameSite=Lax`;
+  };
+
   useEffect(() => {
-    const stored = localStorage.getItem('ek_session');
-    if (stored) {
-      try {
-        const s = JSON.parse(stored);
-        if (s.playerName) setName(s.playerName);
-      } catch {}
-    }
+    const storedName = getUsernameCookie();
+    if (storedName) setName(storedName);
   }, []);
 
   useEffect(() => {
@@ -203,7 +209,7 @@ export default function LobbyPage() {
             <label className="field name-field">
               <span className="field-icon" aria-hidden="true">♙</span>
               <span className="sr-only">Your name</span>
-              <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Enter your name..." maxLength={24} />
+              <input value={name} onChange={(event) => { setName(event.target.value); setUsernameCookie(event.target.value); }} placeholder="Enter your name..." maxLength={24} />
             </label>
 
             <button className="create-button" type="submit" disabled={!connected}>
