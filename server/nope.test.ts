@@ -209,17 +209,17 @@ async function main() {
     }
 
     // Nobody acts — the countdown must resolve the action automatically.
-    if (!(await waitForClear(attacker, 37000))) {
+    if (!(await waitForClear(attacker, 19500))) {
       console.log('FAIL: server timer never resolved the idle window');
       process.exit(1);
     }
     const elapsedMs = Date.now() - (win.deadline - win.duration_ms);
-    if (elapsedMs < 30000) {
+    if (elapsedMs < 15000) {
       console.log(`FAIL: resolved too early (${elapsedMs}ms) — countdown ignored`);
       process.exit(1);
     }
     expiryChecked = true;
-    console.log(`  idle window auto-resolved after ${elapsedMs}ms (~36s). PASS`);
+    console.log(`  idle window auto-resolved after ${elapsedMs}ms (~18s). PASS`);
   }
   if (!expiryChecked) {
     console.log('  skipped — opponent never held a Nope in 3 attempts');

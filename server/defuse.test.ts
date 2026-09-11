@@ -72,7 +72,7 @@ async function main() {
   console.log('1. Game started. Alice hand:', alice.hand.length, '| Bob hand:', bob.hand.length);
 
   // Drive the current player to draw until they hit a kitten (all players hold exactly 1 defuse at the start)
-  let defuser: TC = alice;
+  let defuser: TC = [alice, bob].find((c) => c.isCurrent) ?? alice;
   let draws = 0;
   while (!defuser.exploded && draws < 40) {
     defuser.exploded = null;

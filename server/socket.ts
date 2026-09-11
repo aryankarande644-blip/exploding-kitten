@@ -35,7 +35,7 @@ import {
   sendFutureView,
 } from './broadcast.js';
 
-const NOPE_WINDOW_MS = 36000;
+const NOPE_WINDOW_MS = 18000;
 const ACTIVITY_LIMIT = 60;
 
 const CARD_LABELS: Record<string, string> = {
