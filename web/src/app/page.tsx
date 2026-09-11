@@ -59,6 +59,9 @@ export default function LobbyPage() {
 
     s.on('connect', () => setConnected(true));
     s.on('disconnect', () => setConnected(false));
+    s.on('connect_error', () => setConnected(false));
+
+    setConnected(s.connected);
 
     s.on('ROOM_CREATED', (data: { room_code: string; player_id: string }) => {
       setMyPlayerId(data.player_id);
