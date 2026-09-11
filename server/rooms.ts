@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { GameState, Card } from '../engine/index.ts';
-import { setup } from '../engine/index.ts';
+import { setup, shuffle } from '../engine/index.ts';
 
 export interface PlayerInfo {
   socketId: string;
@@ -91,6 +91,8 @@ export function startGame(roomCode: string): void {
 
   const playerIds = Array.from(room.players.keys());
   const playerNames = playerIds.map((id) => room.players.get(id)!.name);
+
+  shuffle(playerIds);
 
   room.gameState = setup(playerIds, playerNames);
 }

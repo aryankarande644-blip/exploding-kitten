@@ -84,7 +84,12 @@ export default function GamePage() {
 
   const [nopeWindow, setNopeWindow] = useState<{
     triggeringPlayer: string;
+    targetPlayerId: string | null;
+    attackVictimId: string | null;
     cardsPlayed: Card[];
+    actionLabel: string;
+    nopeStack: string[];
+    isCancelled: boolean;
     deadline: number | null;
     mayPass: boolean;
     isActor: boolean;
@@ -155,7 +160,9 @@ export default function GamePage() {
       data.players.forEach((p) => (nameMap[p.id] = p.name));
       setPlayerNameMap(nameMap);
 
-      if (data.winnerId) {
+      if (data.status === 'in_progress') {
+        setGameOverData(null);
+      } else if (data.status === 'finished' && data.winnerId) {
         setGameOverData({
           winner_id: data.winnerId,
           winner_name: nameMap[data.winnerId] || 'Unknown',
@@ -173,6 +180,11 @@ export default function GamePage() {
         triggering_player: string;
         card_played: Card;
         cards_played?: Card[];
+        target_player_id?: string | null;
+        attack_victim_id?: string | null;
+        action_label?: string;
+        nope_stack?: string[];
+        is_cancelled?: boolean;
         deadline?: number;
         may_pass?: boolean;
         is_actor?: boolean;
@@ -181,7 +193,12 @@ export default function GamePage() {
         setNopePassed([]);
         setNopeWindow({
           triggeringPlayer: data.triggering_player,
+          targetPlayerId: data.target_player_id ?? null,
+          attackVictimId: data.attack_victim_id ?? null,
           cardsPlayed: data.cards_played ?? (data.card_played ? [data.card_played] : []),
+          actionLabel: data.action_label ?? '',
+          nopeStack: data.nope_stack ?? [],
+          isCancelled: !!data.is_cancelled,
           deadline: data.deadline ?? null,
           mayPass: !!data.may_pass,
           isActor: !!data.is_actor,
@@ -405,6 +422,11 @@ export default function GamePage() {
     router.push('/');
   };
 
+  const handlePlayAgain = () => {
+    if (!socket) return;
+    socket.emit('START_GAME');
+  };
+
   const handleLeaveRoom = () => {
     if (!window.confirm('Leave the room?')) return;
     if (socket?.connected) {
@@ -441,6 +463,7 @@ export default function GamePage() {
     : 0;
 
   const isConnected = socket?.connected ?? false;
+  const isHost = gameState?.hostId === myPlayerId;
 
   if (!gameState) {
     return (
@@ -1015,14 +1038,54 @@ export default function GamePage() {
         <div className="fixed inset-0 bg-black/60 z-[80] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
           <div className={`${modalPanel} p-7 max-w-md w-full text-center`}>
             <h2 className="text-xl font-bold mb-1">
-              {amActingInNope ? 'Your action — anyone can Nope' : 'Nope window'}
+              {amActingInNope ? 'Your action — anyone can Nope' : nopeWindow.isCancelled ? 'Noped! Action on hold' : 'Nope window'}
             </h2>
-            <p className="text-sm text-slate-400 mb-5">
+            <p className="text-sm text-slate-400 mb-4">
               <span className="text-slate-100 font-medium">
                 {playerNameMap[nopeWindow.triggeringPlayer] || 'Someone'}
               </span>{' '}
-              played {nopeWindow.cardsPlayed.map((c) => getCardInfo(c.type).label).join(' + ')}
+              played{' '}
+              <span className="text-slate-100 font-medium">
+                {nopeWindow.actionLabel ||
+                  nopeWindow.cardsPlayed.map((c) => getCardInfo(c.type).label).join(' + ')}
+              </span>
+              {nopeWindow.targetPlayerId && (
+                <>
+                  {' '}
+                  on{' '}
+                  <span className="text-rose-300 font-medium">
+                    {playerNameMap[nopeWindow.targetPlayerId] || 'a player'}
+                  </span>
+                </>
+              )}
             </p>
+            {nopeWindow.attackVictimId && (
+              <p className="text-xs text-rose-300 mb-4">
+                → hits{' '}
+                <span className="font-semibold">{playerNameMap[nopeWindow.attackVictimId]}</span>{' '}
+                (2 cards to draw)
+              </p>
+            )}
+
+            {nopeWindow.nopeStack.length > 0 && (
+              <div className="mb-4 text-left bg-rose-950/40 border border-rose-500/20 rounded-xl p-3">
+                <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-1.5">
+                  Nope chain
+                </p>
+                <ul className="space-y-1">
+                  {nopeWindow.nopeStack.slice().reverse().map((pid) => (
+                    <li key={pid} className="text-sm font-medium text-rose-300">
+                      🛑 {playerNameMap[pid] || 'Someone'} played Nope
+                    </li>
+                  ))}
+                </ul>
+                <p className={`text-xs mt-2 ${nopeWindow.isCancelled ? 'text-amber-300' : 'text-emerald-300'}`}>
+                  {nopeWindow.isCancelled
+                    ? 'The action is cancelled right now — another Nope brings it back'
+                    : 'The Nope was Noped — the action is back in effect'}
+                </p>
+              </div>
+            )}
 
             {nopeWindow.deadline ? (
               <p className="text-2xl font-bold tabular-nums my-2">
@@ -1201,10 +1264,22 @@ export default function GamePage() {
               {gameOverData.winner_name} wins
             </p>
             <button
-              onClick={handleBackToLobby}
-              className={`${primaryBtn} w-full bg-amber-400 text-black hover:bg-amber-300`}
+              onClick={handlePlayAgain}
+              disabled={!isHost}
+              className={`${primaryBtn} w-full bg-emerald-400 text-black hover:bg-emerald-300 disabled:opacity-40 disabled:cursor-not-allowed shadow-[0_8px_24px_rgba(52,211,153,0.3)]`}
             >
-              Back to lobby
+              ▶ Play Again
+            </button>
+            {!isHost && (
+              <p className="text-xs text-slate-500 mt-2">
+                Waiting for the host to start a rematch
+              </p>
+            )}
+            <button
+              onClick={handleBackToLobby}
+              className={`${primaryBtn} w-full mt-3 bg-amber-400 text-black hover:bg-amber-300`}
+            >
+              Back to Lobby
             </button>
           </div>
         </div>

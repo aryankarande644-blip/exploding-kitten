@@ -135,13 +135,29 @@ function openNopeWindow(io: Server, room: RoomState): void {
     resolveNopeAction(io, room);
   }, NOPE_WINDOW_MS);
 
+  const targetPlayerId = action.targetPlayerId ?? null;
+  let attackVictimId: string | null = null;
+  if (action.cards[0].type === 'attack') {
+    const victim = nextAlivePlayer(room.gameState);
+    attackVictimId = victim?.id ?? null;
+  }
+  const actionLabel =
+    action.cards.length >= 2
+      ? `${action.cards.length}× Cats`
+      : (CARD_LABELS[action.cards[0].type] ?? action.cards[0].type);
+
   for (const [id, info] of room.players) {
     const s = io.sockets.sockets.get(info.socketId);
     if (s) {
       s.emit('NOPE_WINDOW_OPEN', {
         triggering_player: action.sourcePlayerId,
+        target_player_id: targetPlayerId,
+        attack_victim_id: attackVictimId,
         card_played: action.cards[0],
         cards_played: action.cards,
+        action_label: actionLabel,
+        nope_stack: [...action.nopeStack],
+        is_cancelled: action.nopeStack.length % 2 === 1,
         deadline,
         duration_ms: NOPE_WINDOW_MS,
         eligible_count: eligible.length,
@@ -369,7 +385,16 @@ export function setupSocketHandlers(io: Server): void {
         if (room.hostId !== playerId) throw new Error('Only host can start');
         if (room.players.size < 2)
           throw new Error('Need at least 2 players');
-        if (room.gameState) throw new Error('Game already started');
+        if (room.gameState && room.gameState.status !== 'finished')
+          throw new Error('Game already started');
+
+        if (room.gameState) {
+          clearNopeTimer(room);
+          room.pendingFavor = null;
+          room.pendingDefuse = null;
+          room.gameOverLogged = false;
+          room.activity = [];
+        }
 
         startGame(roomCode);
 

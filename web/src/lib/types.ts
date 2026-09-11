@@ -35,6 +35,7 @@ export interface ActivityEntry {
 
 export interface ClientGameState {
   players: { id: string; name: string; alive: boolean; cardCount: number }[];
+  hostId: string;
   deckCount: number;
   discardTop: Card | null;
   discardCount: number;

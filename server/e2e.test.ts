@@ -160,7 +160,7 @@ async function main() {
   console.log('    (Only PRIVATE_HAND carries actual card data)');
 
   console.log('\n7. Playing a few turns to validate turn passing + draws...');
-  let active = alice;
+  let active = [alice, bob, carol].find((c) => c.currentPlayerIsMe) ?? alice;
   for (let i = 0; i < 6; i++) {
     const current: TestClient = active;
     const skip = current.hasCard('skip');

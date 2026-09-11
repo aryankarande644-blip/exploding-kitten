@@ -54,32 +54,35 @@ async function main() {
 
   const aliceTurn = alice.gameState?.currentPlayerId === alice.playerId;
   console.log(`Game started. current=${alice.gameState?.currentPlayerId} aliceIsCurrent=${aliceTurn}`);
-  if (!aliceTurn) throw new Error('Alice should start');
+  const starter = aliceTurn ? alice : bob;
+  const other = aliceTurn ? bob : alice;
 
   const beforeCount = alice.gameState?.players.length;
-  const leftOk = alice.waitFor('LEFT_ROOM');
-  alice.socket.emit('LEAVE_ROOM');
+  const leftOk = starter.waitFor('LEFT_ROOM');
+  starter.socket.emit('LEAVE_ROOM');
   const lr = await leftOk;
-  if (lr.room_code !== alice.roomCode) throw new Error('Bad LEFT_ROOM payload');
+  if (lr.room_code !== starter.roomCode) throw new Error('Bad LEFT_ROOM payload');
   await delay(400);
 
-  const remaining = alice.gameState?.players?.length ?? null;
-  const aliceInBobView = bob.gameState?.players?.find((p: any) => p.id === alice.playerId);
-  const stateAfter = bob.gameState?.players?.map((p: any) => `${p.name}:${p.alive ? 'alive' : 'out'}`).join(', ') ?? 'none';
+  const remaining = starter.gameState?.players?.length ?? null;
+  const starterInOtherView = other.gameState?.players?.find((p: any) => p.id === starter.playerId);
+  const stateAfter = other.gameState?.players?.map((p: any) => `${p.name}:${p.alive ? 'alive' : 'out'}`).join(', ') ?? 'none';
 
-  console.log(`Alice left. players before=${beforeCount}, after on her stale state=${remaining}`);
-  console.log(`Bob's view: ${stateAfter} | aliceAlive=${aliceInBobView?.alive} | bobHasHand=${bob.hand.length}`);
-  console.log(`Bob current=${bob.gameState?.currentPlayerId === bob.playerId} obligations=${bob.gameState?.drawObligations}`);
+  console.log(`Starter left. players before=${beforeCount}, after on their stale state=${remaining}`);
+  console.log(`Other's view: ${stateAfter} | starterAlive=${starterInOtherView?.alive} | otherHasHand=${other.hand.length}`);
+  console.log(`Other current=${other.gameState?.currentPlayerId === other.playerId} obligations=${other.gameState?.drawObligations}`);
 
-  if (!aliceInBobView) throw new Error('Bug: Alice disappeared from game state');
-  if (aliceInBobView.alive) throw new Error('Bug: Alice still alive in Bob state');
-  if (bob.hand.length !== 8) throw new Error('Bug: Bob hand changed unexpectedly');
+  if (!starterInOtherView) throw new Error('Bug: leaver disappeared from game state');
+  if (starterInOtherView.alive) throw new Error('Bug: leaver still alive in other state');
+  if (other.hand.length !== 8) throw new Error('Bug: other hand changed unexpectedly');
+  if (other.gameState?.currentPlayerId !== other.playerId)
+    throw new Error('Bug: turn did not advance to remaining player');
 
-  const topDeck = bob.gameState?.drawObligations;
-  bob.socket.emit('DRAW_CARD');
+  const topDeck = other.gameState?.drawObligations;
+  other.socket.emit('DRAW_CARD');
   await delay(300);
-  if (bob.gameState?.drawObligations !== topDeck - 1) {
-    console.log(`    Bob drew; obligations ${topDeck} -> ${bob.gameState?.drawObligations}`);
+  if (other.gameState?.drawObligations !== topDeck - 1) {
+    console.log(`    Other drew; obligations ${topDeck} -> ${other.gameState?.drawObligations}`);
   }
 
   console.log('\nLEAVE TEST PASSED.');

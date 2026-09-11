@@ -20,6 +20,7 @@ export function broadcastGameState(io: Server, room: RoomState): void {
         alive: p.alive,
         cardCount: p.hand.length,
       })),
+      hostId: room.hostId,
       deckCount: state.deck.length,
       discardTop:
         state.discard.length > 0
@@ -62,6 +63,7 @@ export function broadcastPublicState(io: Server, room: RoomState): void {
       alive: p.alive,
       cardCount: p.hand.length,
     })),
+    hostId: room.hostId,
     deckCount: state.deck.length,
     discardTop:
       state.discard.length > 0
