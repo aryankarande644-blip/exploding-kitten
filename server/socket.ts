@@ -351,6 +351,41 @@ export function setupSocketHandlers(io: Server): void {
           }
           if (!room) throw new Error('Room not found');
 
+          const joinName = data.player_name.trim().toLowerCase();
+          const existingEntry = Array.from(room.players.entries()).find(
+            ([, info]) => info.name.trim().toLowerCase() === joinName
+          );
+          const existingAlive = existingEntry
+            ? io.sockets.sockets.has(existingEntry[1].socketId)
+            : false;
+          if (existingEntry && existingAlive) {
+            throw new Error('A player with that name is already in this room');
+          }
+
+          if (existingEntry) {
+            // Ghost left behind by a server restart / dead tab — rebind the
+            // rejoining player to their original player id instead of duplicating.
+            const [existingId, existingInfo] = existingEntry;
+            room.players.set(existingId, { ...existingInfo, socketId: socket.id });
+            socketToRoom.set(socket.id, roomCode);
+            socketToPlayer.set(socket.id, existingId);
+            socket.join(roomCode);
+
+            socket.emit('ROOM_JOINED', {
+              room_code: roomCode,
+              player_id: existingId,
+            });
+
+            socket.emit('ROOM_STATE', {
+              room_code: roomCode,
+              player_id: existingId,
+              ...getLobbyState(room),
+            });
+
+            emitLobby(io, room);
+            return;
+          }
+
           joinRoom(roomCode, playerId, data.player_name.trim(), socket.id);
 
           socketToRoom.set(socket.id, roomCode);
