@@ -26,33 +26,50 @@ export function GameCard({ card, onClick, selected, disabled, small, className, 
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
       className={cx(
-        'relative rounded-xl border border-white/25 flex flex-col overflow-hidden select-none',
-        'shadow-[0_4px_14px_rgba(0,0,0,0.45)]',
-        small ? 'w-16 h-24' : 'w-24 h-36',
+        'relative rounded-xl border border-white/30 flex flex-col overflow-hidden select-none',
+        small
+          ? 'w-14 h-20 sm:w-16 sm:h-24 shadow-[0_4px_10px_rgba(0,0,0,0.4)]'
+          : 'w-24 h-36 sm:w-28 sm:h-40 shadow-card',
         disabled && 'opacity-40 cursor-not-allowed',
         !disabled && onClick && 'cursor-pointer',
         selected && 'ring-2 ring-amber-300/80',
         className,
       )}
-      style={{ backgroundColor: '#f7f5ef', ...style }}
+      style={{ backgroundColor: info.color, ...style }}
     >
-      <div className="flex-none h-1.5 w-full" style={{ backgroundColor: info.color }} />
-      <div className="flex-1 flex flex-col items-center justify-center gap-1 px-1">
-        <span className={cx('drop-shadow-sm', small ? 'text-2xl' : 'text-4xl')}>{info.emoji}</span>
-        <span
-          className={cx(
-            'text-center font-medium leading-tight text-slate-600',
-            small ? 'text-[8px]' : 'text-[10px]',
-            info.label.length > 14 && !small && 'text-[8px]',
-          )}
-        >
-          {info.label}
-        </span>
-      </div>
-      <span
-        className="absolute right-1.5 top-2 w-1.5 h-1.5 rounded-full"
-        style={{ backgroundColor: info.color }}
-      />
+      {small ? (
+        <div className="flex-1 flex flex-col items-center justify-center gap-0.5 px-1">
+          <span className="text-xl sm:text-2xl drop-shadow-sm">{info.emoji}</span>
+          <span className="text-[7px] sm:text-[8px] font-bold text-white/95 text-center leading-tight">
+            {info.label}
+          </span>
+        </div>
+      ) : (
+        <div className="flex-1 flex flex-col p-1.5">
+          <div className="flex items-center justify-between gap-1">
+            <span
+              className="text-[9px] sm:text-[10px] font-black uppercase tracking-wide text-white/95 leading-tight"
+              style={
+                info.label.length > 12
+                  ? { fontSize: '0.55rem' }
+                  : undefined
+              }
+            >
+              {info.label}
+            </span>
+            <span className="text-sm sm:text-base flex-none">{info.emoji}</span>
+          </div>
+          <div className="flex-1 flex items-center justify-center">
+            <span className="text-3xl sm:text-4xl drop-shadow-sm">{info.emoji}</span>
+          </div>
+          <div className="rounded-md bg-black/20 py-0.5 px-1 text-center">
+            <span className="text-[7px] sm:text-[8px] font-bold text-white/90 leading-tight line-clamp-2">
+              {info.description}
+            </span>
+          </div>
+        </div>
+      )}
+      <span className="absolute right-1.5 top-2 w-1.5 h-1.5 rounded-full bg-white/70" />
     </button>
   );
 }
@@ -61,9 +78,8 @@ export function CardBack({ small }: { small?: boolean }) {
   return (
     <div
       className={cx(
-        'rounded-2xl border border-amber-400/30 bg-gradient-to-br from-amber-600/90 to-amber-900/90 flex items-center justify-center',
-        'shadow-[0_6px_16px_rgba(0,0,0,0.4)]',
-        small ? 'w-16 h-24 text-lg' : 'w-24 h-36 text-3xl',
+        'card-back rounded-xl shadow-[0_6px_16px_rgba(0,0,0,0.4)]',
+        small ? 'w-14 h-20 sm:w-16 sm:h-24 text-lg' : 'w-24 h-36 sm:w-28 sm:h-40 text-3xl',
       )}
     >
       <span className="opacity-90 drop-shadow">🐱</span>
@@ -75,12 +91,14 @@ export function FaceDownCard({ small }: { small?: boolean }) {
   return (
     <div
       className={cx(
-        'rounded-2xl border border-white/10 bg-gradient-to-br from-slate-700/70 to-slate-800/70 flex items-center justify-center',
+        'rounded-xl border border-white/10 bg-gradient-to-br from-slate-700/70 to-slate-800/70 flex items-center justify-center',
         'shadow-[0_6px_16px_rgba(0,0,0,0.4)]',
-        small ? 'w-16 h-24 text-lg' : 'w-24 h-36 text-3xl',
+        small ? 'w-14 h-20 sm:w-16 sm:h-24 text-lg' : 'w-24 h-36 sm:w-28 sm:h-40 text-3xl',
       )}
     >
       <span className="text-slate-400 font-semibold">?</span>
     </div>
   );
 }
+
+export { isCatCard };

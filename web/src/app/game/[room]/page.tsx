@@ -6,7 +6,7 @@ import { CSSProperties } from 'react';
 import { getSocket } from '@/lib/socket';
 import { Socket } from 'socket.io-client';
 import { Card, CardType, ClientGameState, LobbyState } from '@/lib/types';
-import { GameCard, CardBack, FaceDownCard } from '@/components/Card';
+import { GameCard } from '@/components/Card';
 import { getCardInfo, isCatCard } from '@/lib/cardInfo';
 
 const ALL_CARD_TYPES: CardType[] = [
@@ -44,10 +44,25 @@ interface FutureData {
 }
 
 const modalPanel =
-  'bg-[#171c30]/95 border border-white/10 rounded-3xl shadow-2xl backdrop-blur-sm animate-slide-up';
+  'bg-[#221016]/95 border border-red-500/20 rounded-3xl shadow-2xl backdrop-blur-md animate-slide-up';
 
 const primaryBtn =
   'h-12 px-8 rounded-full font-semibold text-base transition-all active:scale-95';
+
+const AVATAR_BG = [
+  'bg-amber-500',
+  'bg-pink-600',
+  'bg-emerald-500',
+  'bg-sky-500',
+  'bg-violet-500',
+];
+const AVATAR_BORDER = [
+  'border-amber-300',
+  'border-pink-300',
+  'border-emerald-300',
+  'border-sky-300',
+  'border-violet-300',
+];
 
 export default function GamePage() {
   const params = useParams();
@@ -65,6 +80,7 @@ export default function GamePage() {
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
   const [namedCardType, setNamedCardType] = useState<CardType | null>(null);
   const [error, setError] = useState('');
+  const [copied, setCopied] = useState(false);
 
   const [nopeWindow, setNopeWindow] = useState<{
     triggeringPlayer: string;
@@ -393,6 +409,14 @@ export default function GamePage() {
     router.push('/');
   };
 
+  const handleCopyCode = () => {
+    try {
+      navigator.clipboard.writeText(roomCode);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {}
+  };
+
   const currentPlayerName = gameState?.currentPlayerId
     ? playerNameMap[gameState.currentPlayerId] || '...'
     : '...';
@@ -411,12 +435,14 @@ export default function GamePage() {
     ? Math.max(0, Math.ceil((nopeWindow.deadline - clockNow) / 1000))
     : 0;
 
+  const isConnected = socket?.connected ?? false;
+
   if (!gameState) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen bg-game-bg flex items-center justify-center">
         <div className="animate-fade-in text-center">
           <div className="text-4xl mb-3 animate-pulse">🐱</div>
-          <p className="text-slate-400 text-sm">Entering the game...</p>
+          <p className="text-gray-400 text-sm font-display">Entering the game...</p>
         </div>
       </div>
     );
@@ -441,203 +467,503 @@ export default function GamePage() {
     return `Waiting for ${currentPlayerName}...`;
   })();
 
+  const canDrawNow =
+    isMyTurn &&
+    hasDrawObligation &&
+    selectedCards.length === 0 &&
+    !nopeWindow &&
+    !explosionData &&
+    !favorData &&
+    !gameState?.pendingPrompt;
+
+  const opponents = gameState.players.filter((p) => p.id !== myPlayerId);
+  const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
+
+  const seatClasses = [
+    'absolute top-1 sm:top-2 left-1/2 -translate-x-1/2 z-20',
+    'absolute left-[2%] sm:left-5 top-1/2 -translate-y-1/2 z-20',
+    'absolute right-[2%] sm:right-5 top-1/2 -translate-y-1/2 z-20',
+    'absolute top-3 left-[16%] sm:left-[22%] z-20',
+    'absolute top-3 right-[16%] sm:right-[22%] z-20',
+  ];
+  const horizontalSeats = [0, 3, 4];
+
+  const renderCardBacks = (count: number, vertical: boolean) => {
+    const clamped = Math.max(0, Math.min(6, count));
+    const rotsH = [-14, -9, -4, -1, 1, 4, 9, 14];
+    const rotsV = [12, 7, 2, -2, -7, -12];
+    const backs = [];
+    for (let i = 0; i < clamped; i++) {
+      const rot = vertical ? rotsV[i % rotsV.length] : rotsH[i % rotsH.length];
+      backs.push(
+        <div
+          key={i}
+          className="card-back w-8 h-12 sm:w-9 sm:h-14 rounded-lg shadow-lg"
+          style={{ transform: `rotate(${rot}deg)` }}
+        >
+          <span className="text-[8px]">🐱</span>
+        </div>
+      );
+    }
+    return backs;
+  };
+
   return (
-    <div className="h-screen w-full flex flex-col overflow-hidden bg-gradient-to-b from-[#161b2e] to-[#0b0e18] text-slate-100 relative">
+    <div className="h-screen w-full flex flex-col overflow-hidden bg-game-bg text-white relative font-sans select-none">
+      {/* Ambient lamp glow */}
+      <div className="lamp-glow absolute top-[-6%] right-[10%] w-[70vw] max-w-[560px] h-[60vh] max-h-[560px] pointer-events-none z-[5]" />
+
       {/* Error toast */}
       {error && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] bg-rose-950/90 border border-rose-700/50 rounded-full px-5 py-2 text-sm text-rose-200 animate-fade-in shadow-xl">
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[100] bg-rose-950/90 border border-rose-500/40 rounded-full px-5 py-2 text-sm text-rose-200 animate-fade-in shadow-xl">
           {error}
         </div>
       )}
 
-      {/* Top bar */}
-      <header className="flex items-center justify-between px-5 py-2.5 border-b border-white/5 z-30">
-        <span className="font-mono text-sm tracking-[0.25em] text-amber-300/90">{roomCode}</span>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-slate-400 hidden sm:inline">{myName}</span>
+      {/* ===== Top navigation ===== */}
+      <header className="relative z-40 w-full px-4 sm:px-6 py-3 flex items-center justify-between border-b border-white/5 bg-black/40 backdrop-blur-md gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-gradient-to-tr from-amber-500 to-yellow-400 p-0.5 shadow-md flex items-center justify-center flex-none">
+            <svg className="w-6 h-6 sm:w-7 sm:h-7 text-amber-950 fill-current" viewBox="0 0 24 24">
+              <path d="M12 2C6.48 2 2 6.48 2 12c0 2.85 1.2 5.42 3.12 7.24L4 21l3.5-1.5c1.37.95 3.03 1.5 4.5 1.5 5.52 0 10-4.48 10-10S17.52 2 12 2zm-5 7c.83 0 1.5.67 1.5 1.5S7.83 12 7 12s-1.5-.67-1.5-1.5S6.17 9 7 9zm10 0c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5-1.5-.67-1.5-1.5.67-1.5 1.5-1.5zm-5 8c-2.33 0-4.31-1.46-5.11-3.5h10.22c-.8 2.04-2.78 3.5-5.11 3.5z" />
+            </svg>
+          </div>
+          <div className="min-w-0">
+            <h1 className="font-display font-extrabold text-lg sm:text-2xl tracking-tight text-white uppercase drop-shadow leading-none truncate">
+              Exploding <span className="text-card-nope">Kittens</span>
+            </h1>
+            <span className="text-[10px] tracking-widest text-amber-400/80 uppercase font-mono block">
+              Multiplayer Live
+            </span>
+          </div>
+        </div>
+
+        {/* Room code badge */}
+        <div className="flex items-center gap-2 bg-white/5 border border-amber-500/40 rounded-xl px-2.5 sm:px-5 py-2 shadow-inner flex-none">
+          <span className="text-[10px] sm:text-xs uppercase font-semibold text-gray-400 tracking-wider hidden sm:inline">
+            Room Code:
+          </span>
+          <span className="font-mono font-black tracking-widest text-amber-400 text-base sm:text-lg">
+            {roomCode}
+          </span>
+          <button
+            onClick={handleCopyCode}
+            title="Copy Room Code"
+            className="text-amber-300/70 hover:text-amber-200 transition-colors p-1 rounded hover:bg-white/5"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+              />
+            </svg>
+          </button>
+          {copied && <span className="text-[10px] text-emerald-400 font-bold">Copied!</span>}
+        </div>
+
+        {/* Profile + exit */}
+        <div className="flex items-center gap-3 flex-none">
+          <div className="flex items-center gap-2.5 bg-black/30 border border-white/10 px-3 py-1.5 rounded-full">
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-amber-400 border-2 border-amber-300 flex items-center justify-center text-amber-950 font-bold text-xs sm:text-sm shadow-md">
+              🐱
+            </div>
+            <div className="text-left hidden md:block">
+              <span className="text-xs font-bold text-white block leading-tight">
+                {myName} <span className="text-white/50">(You)</span>
+              </span>
+              <span
+                className={`text-[10px] font-medium leading-none flex items-center gap-1 ${
+                  isConnected ? 'text-emerald-400' : 'text-amber-400'
+                }`}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-current inline-block" />
+                {isConnected ? 'Online' : 'Connecting...'}
+              </span>
+            </div>
+          </div>
           <button
             onClick={handleLeaveRoom}
-            className="text-xs px-3 py-1.5 rounded-full border border-white/15 text-slate-300 hover:bg-white/10 hover:text-white transition-colors"
+            className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-full border border-red-500/40 bg-red-950/50 hover:bg-red-900/70 text-red-300 text-xs font-bold tracking-wide transition shadow"
           >
-            Exit
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+              />
+            </svg>
+            <span>Exit</span>
           </button>
         </div>
       </header>
 
-      {/* All player seats (opponents + you) */}
-      <section className="flex justify-center gap-2 px-6 pt-3 pb-1 z-20">
-        {gameState.players.map((p) => {
-          const isCurrent = gameState.currentPlayerId === p.id;
-          const isMe = p.id === myPlayerId;
-          const targetable = selectionNeedsTarget && p.alive && !isMe;
-          return (
-            <button
-              key={p.id}
-              onClick={targetable ? () => setSelectedTarget(p.id) : undefined}
-              className={`group flex flex-col items-center gap-1.5 rounded-2xl px-4 py-2.5 w-24 transition-all ${
-                !p.alive && 'opacity-35 grayscale'
-              } ${targetable ? 'cursor-pointer hover:bg-white/5' : 'cursor-default'} ${
-                selectedTarget === p.id
-                  ? 'bg-white/5 ring-2 ring-amber-300/80'
-                  : targetable
-                    ? 'ring-1 ring-white/10 hover:ring-amber-300/40'
-                    : ''
-              }`}
-            >
+      {/* ===== Game arena ===== */}
+      <main className="relative flex-1 flex items-center justify-center min-h-0 p-2 sm:p-4 overflow-hidden">
+        {/* Lamp fixture */}
+        <div className="absolute top-2 right-20 hidden lg:block opacity-75 pointer-events-none z-20">
+          <svg className="w-28 h-28 text-amber-500/80" fill="currentColor" viewBox="0 0 100 100">
+            <path d="M50 0 L52 30 L75 55 L25 55 L48 30 Z" opacity="0.8" />
+            <ellipse cx="50" cy="55" fill="#ffb03a" rx="25" ry="8" />
+          </svg>
+        </div>
+
+        {/* Handwritten notes */}
+        <div className="absolute left-5 top-5 hidden md:block -rotate-[8deg] bg-amber-100/10 border border-white/10 p-3 rounded shadow-lg backdrop-blur-sm text-center z-20 pointer-events-none">
+          <p className="font-handwriting text-pink-300 text-xl font-bold leading-tight">
+            GOOD<br />KITTENS.<br />BAD LUCK.
+          </p>
+        </div>
+        <div className="absolute right-6 top-8 hidden md:block rotate-[6deg] bg-amber-100/10 border border-white/10 p-3 rounded shadow-lg backdrop-blur-sm text-center z-20 pointer-events-none">
+          <p className="font-handwriting text-pink-300 text-xl font-bold leading-tight">
+            SAME<br />KITTENS.<br />DIFFERENT<br />VICTIMS.
+          </p>
+        </div>
+
+        {/* Status chip */}
+        <div className="absolute top-1 left-1/2 -translate-x-1/2 z-30 max-w-[90vw]">
+          <p className="text-[11px] sm:text-xs text-gray-300 text-center bg-black/40 px-4 py-1 rounded-full border border-white/5 backdrop-blur-sm truncate">
+            {statusText}
+          </p>
+        </div>
+
+        {/* Poker table */}
+        <div className="poker-table relative w-full max-w-6xl h-[60vh] max-h-[540px] min-h-[320px] flex items-center justify-center mx-auto shadow-2xl">
+          {/* Opponents */}
+          {opponents.map((p, idx) => {
+            const isCurrent = gameState.currentPlayerId === p.id;
+            const isOut = !p.alive;
+            const vertical = !horizontalSeats.includes(idx);
+            const targetable = selectionNeedsTarget && p.alive;
+            const avatarCls = AVATAR_BG[idx % AVATAR_BG.length];
+            const borderCls = AVATAR_BORDER[idx % AVATAR_BORDER.length];
+            const ringCls =
+              isCurrent || selectedTarget === p.id
+                ? 'ring-2 ring-amber-300'
+                : targetable
+                  ? 'ring-1 ring-white/30 hover:ring-amber-300'
+                  : '';
+
+            return (
               <div
-                className={`relative flex items-center justify-center rounded-full font-bold border-2 transition-all ${
-                  p.alive
-                    ? 'bg-gradient-to-br from-amber-500/90 to-orange-600/90 border-amber-200/30 text-white'
-                    : 'bg-slate-800 border-white/10 text-slate-500'
-                } ${isCurrent ? 'ring-2 ring-amber-300' : ''} ${
-                  selectedTarget === p.id ? 'ring-2 ring-amber-300' : ''
-                } ${isMe ? 'ring-2 ring-sky-400/70' : ''}`}
-                style={{ width: 48, height: 48 }}
+                key={p.id}
+                className={`${seatClasses[idx % seatClasses.length]} flex flex-col items-center ${
+                  isOut ? 'opacity-35 grayscale' : ''
+                } ${targetable ? 'cursor-pointer' : ''}`}
+                onClick={targetable ? () => setSelectedTarget(p.id) : undefined}
               >
-                {p.name.charAt(0).toUpperCase()}
-                {isCurrent && (
-                  <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-amber-300" />
+                {vertical ? (
+                  <div className="flex flex-row items-center gap-2 sm:gap-3">
+                    <div className="flex flex-col items-center text-center bg-black/50 border border-white/10 p-2 rounded-2xl backdrop-blur-sm shadow-lg">
+                      <div
+                        className={`relative w-9 h-9 sm:w-10 sm:h-10 rounded-full ${avatarCls} ${borderCls} border-2 flex items-center justify-center font-bold text-sm sm:text-base text-white shadow-md ${ringCls}`}
+                      >
+                        {p.name.charAt(0).toUpperCase()}
+                        {isCurrent && <span className="absolute -top-2 -right-2 text-xs">👑</span>}
+                      </div>
+                      <span
+                        className={`text-xs font-bold mt-1.5 ${
+                          isCurrent ? 'text-amber-300' : 'text-gray-200'
+                        }`}
+                      >
+                        {p.name}
+                      </span>
+                      <span className="text-[10px] text-gray-400 block">
+                        {isOut ? 'out' : `${p.cardCount} cards`}
+                      </span>
+                    </div>
+                    <div className="flex flex-col -space-y-8">
+                      {renderCardBacks(p.cardCount, true)}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center">
+                    <div className="relative flex items-center gap-2 bg-black/60 px-3 sm:px-4 py-1.5 rounded-full border border-white/10 shadow-lg backdrop-blur-md">
+                      <div
+                        className={`relative w-7 h-7 sm:w-8 sm:h-8 rounded-full ${avatarCls} ${borderCls} border-2 flex items-center justify-center font-black text-xs sm:text-sm text-white shadow ${ringCls}`}
+                      >
+                        {p.name.charAt(0).toUpperCase()}
+                      </div>
+                      <span
+                        className={`text-xs font-bold block leading-tight hidden sm:block ${
+                          isCurrent ? 'text-amber-300' : 'text-gray-100'
+                        }`}
+                      >
+                        {p.name}
+                      </span>
+                      <span className="text-[10px] text-gray-400 block leading-none hidden sm:block">
+                        {isOut ? 'out' : `${p.cardCount} cards`}
+                      </span>
+                      {isCurrent && <span className="absolute -top-1 right-0 text-xs">👑</span>}
+                    </div>
+                    <div className="flex items-center -space-x-5 mt-2">
+                      {renderCardBacks(p.cardCount, false)}
+                    </div>
+                  </div>
                 )}
               </div>
-              <span className="text-xs text-slate-300 max-w-full truncate">
-                {p.name}
-                {isMe && <span className="text-sky-300 ml-1">(You)</span>}
-              </span>
-              <span className="text-[10px] text-slate-500">
-                {p.alive ? `${p.cardCount} card${p.cardCount !== 1 ? 's' : ''}` : 'out'}
-              </span>
-            </button>
-          );
-        })}
-      </section>
+            );
+          })}
 
-      {/* Table: deck + discard */}
-      <main className="relative flex-1 flex flex-col items-center justify-center gap-6 min-h-0 px-6 z-10">
-        <div className="flex items-start gap-16">
-          <div className="flex flex-col items-center gap-2.5">
-            <div className="relative">
-              <CardBack />
-              <span className="absolute -top-2 -right-2 min-w-6 h-6 px-1 rounded-full bg-slate-900/90 border border-white/15 text-[11px] flex items-center justify-center font-semibold text-amber-200/90">
-                {gameState.deckCount}
+          {/* Deck + discard */}
+          <div className="flex items-center gap-8 sm:gap-16 relative z-20 my-auto">
+            <div className="absolute -left-24 top-6 hidden sm:flex flex-col items-end pointer-events-none">
+              <span className="font-handwriting text-rose-300 text-2xl font-bold -rotate-12 drop-shadow">
+                Draw<br />Card!
+              </span>
+              <svg
+                className="w-8 h-8 text-rose-300 -rotate-45 -mt-1 mr-1"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  d="M14 5l7 7m0 0l-7 7m7-7H3"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2.5"
+                />
+              </svg>
+            </div>
+
+            <div className="flex flex-col items-center">
+              <div
+                className={`relative group ${
+                  canDrawNow
+                    ? 'cursor-pointer hover:scale-105 transition-transform duration-200'
+                    : 'cursor-default'
+                }`}
+                onClick={canDrawNow ? handleDrawCard : undefined}
+              >
+                <div className="absolute inset-0 translate-y-4 translate-x-1 bg-rose-950 rounded-xl border border-black/40 shadow-2xl" />
+                <div className="absolute inset-0 translate-y-3 translate-x-0.5 bg-rose-900 rounded-xl border border-black/30 shadow-xl" />
+                <div className="absolute inset-0 translate-y-1.5 bg-red-900 rounded-xl shadow-lg" />
+                <div className="relative w-24 h-36 sm:w-32 sm:h-44 rounded-xl bg-gradient-to-b from-neutral-900 via-neutral-900 to-black border-2 border-red-500/60 p-2.5 shadow-2xl flex flex-col justify-between items-center text-center">
+                  <span className="absolute -top-3 -right-3 bg-neutral-900 text-amber-300 border-2 border-amber-400 text-xs font-black w-8 h-8 rounded-full flex items-center justify-center shadow-lg">
+                    {gameState.deckCount}
+                  </span>
+                  <span className="text-[10px] font-extrabold text-red-500 tracking-wider uppercase mt-1 leading-tight">
+                    Exploding<br />
+                    <span className="text-white">Kittens</span>
+                  </span>
+                  <div className="my-auto text-2xl sm:text-3xl filter drop-shadow">💣🐱</div>
+                  <div className="w-full bg-red-600/30 rounded py-1 border border-red-500/40">
+                    <span className="text-[9px] sm:text-[10px] uppercase tracking-widest font-black text-red-300 block">
+                      DECK
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <span className="text-xs font-black tracking-widest text-white/50 uppercase mt-5">
+                DECK
               </span>
             </div>
-            <span className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Deck</span>
+
+            <div className="flex flex-col items-center">
+              {gameState.discardTop ? (
+                <div className="relative">
+                  <GameCard card={gameState.discardTop} small />
+                  {gameState.discardCount > 0 && (
+                    <span className="absolute -top-2 -right-2 bg-neutral-900 text-amber-300 border border-amber-400/60 text-[10px] font-black w-6 h-6 rounded-full flex items-center justify-center shadow-lg">
+                      {gameState.discardCount}
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <div className="relative w-24 h-36 sm:w-32 sm:h-44 rounded-xl border-2 border-dashed border-white/20 bg-black/30 backdrop-blur-sm flex flex-col items-center justify-center p-3 text-center shadow-inner">
+                  <div className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-2">
+                    <svg className="w-6 h-6 text-white/30" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 14h-2v-2h2v2zm0-4h-2V7h2v5z" />
+                    </svg>
+                  </div>
+                  <span className="text-[10px] font-medium text-white/40 leading-tight">
+                    No card played yet
+                  </span>
+                </div>
+              )}
+              <span className="text-xs font-black tracking-widest text-white/50 uppercase mt-5">
+                DISCARD
+              </span>
+            </div>
+
+            <div className="absolute -right-24 top-8 hidden sm:flex flex-col items-start pointer-events-none">
+              <span className="font-handwriting text-rose-300 text-2xl font-bold rotate-6 drop-shadow">
+                Play<br />Smart...
+              </span>
+              <svg
+                className="w-8 h-8 text-rose-300 rotate-45 -mt-1 ml-1"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  d="M10 19l-7-7m0 0l7-7m-7 7h18"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2.5"
+                />
+              </svg>
+            </div>
           </div>
 
-          <div className="flex flex-col items-center gap-2.5">
-            {gameState.discardTop ? (
-              <GameCard card={gameState.discardTop} small />
-            ) : (
-              <FaceDownCard small />
-            )}
-            <span className="text-[10px] uppercase tracking-[0.2em] text-slate-500">
-              Discard{gameState.discardCount > 0 ? ` · ${gameState.discardCount}` : ''}
-            </span>
-          </div>
+          {/* My player tag above hand */}
+          {myPlayer && (
+            <div className="absolute bottom-2 sm:bottom-3 left-1/2 -translate-x-1/2 flex flex-col items-center z-20">
+              <div className="flex items-center gap-2.5 bg-black/60 backdrop-blur-md px-3 sm:px-4 py-1.5 rounded-full border border-amber-500/50 shadow-lg">
+                <div className="w-7 h-7 rounded-full bg-amber-500 text-slate-950 font-black text-xs flex items-center justify-center shadow">
+                  {myPlayer.name.charAt(0).toUpperCase()}
+                  {isMyTurn && <span className="text-[9px] ml-0.5">👑</span>}
+                </div>
+                <div className="text-left">
+                  <span className="text-xs font-bold text-amber-300 block leading-tight">
+                    {myName} <span className="text-white/50">(You)</span>
+                  </span>
+                  <span className="text-[10px] text-gray-300 block -mt-0.5">
+                    {hand.length} card{hand.length !== 1 ? 's' : ''} in hand
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </main>
 
-      {/* HUD: status + primary action */}
-      <section className="relative z-20 flex flex-col items-center gap-2 px-6 pb-3">
-        <p className="text-center text-sm text-slate-400 min-h-[18px]">{statusText}</p>
+      {/* ===== Bottom hand area ===== */}
+      <footer className="relative z-30 pb-3 sm:pb-4 pt-1 px-3 sm:px-4 w-full flex flex-col items-center">
+        <div className="w-full max-w-7xl mx-auto flex flex-col items-center relative px-4 sm:px-6">
+          {/* Cat triple: name a card type to steal */}
+          {isSameCatSelection && selectionCardObjects.length === 3 && isMyTurn && (
+            <div className="flex flex-wrap justify-center gap-1.5 max-w-xl animate-fade-in mb-1">
+              {ALL_CARD_TYPES.map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setNamedCardType(t)}
+                  className={`px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${
+                    namedCardType === t
+                      ? 'bg-card-nope/80 border-card-nope/60 text-white'
+                      : 'bg-white/5 border-white/10 text-gray-300 hover:bg-white/10'
+                  }`}
+                >
+                  {getCardInfo(t).label}
+                </button>
+              ))}
+            </div>
+          )}
 
-        <div className="flex items-center gap-3 min-h-[46px]">
-          {isMyTurn && hasDrawObligation && selectedCards.length === 0 && (
+          {/* Fan dock */}
+          <div className="relative w-full flex items-end justify-center pb-2">
+            {isMyTurn && !gameState.pendingAction && (
+              <div className="absolute -top-4 left-1/2 -translate-x-1/2 z-40 pointer-events-none text-[11px] font-semibold text-amber-200 bg-amber-400/15 border border-amber-300/30 rounded-full px-3 py-1 animate-fade-in">
+                ● Your turn
+              </div>
+            )}
+            <div className="flex items-end justify-center overflow-x-auto rounded-2xl bg-black/25 border border-white/5 backdrop-blur-sm py-2 min-h-[170px] w-full">
+              <div className="flex items-end px-8">
+                {hand.map((card, i) => {
+                  const angle = (i - mid) * spreadDeg;
+                  const lift = Math.abs(i - mid) * 6;
+                  const fanStyle = {
+                    marginLeft: i === 0 ? 0 : overlapStep,
+                    '--rot': `${angle}deg`,
+                    '--lift': `${lift}px`,
+                    '--zi': String(i + 1),
+                    '--sel': selectedCards.includes(card.id) ? '-26px' : '0px',
+                  } as CSSProperties;
+                  return (
+                    <GameCard
+                      key={card.id}
+                      card={card}
+                      className="ek-fan"
+                      style={fanStyle}
+                      selected={selectedCards.includes(card.id)}
+                      disabled={
+                        !isMyTurn ||
+                        card.type === 'exploding_kitten' ||
+                        card.type === 'defuse' ||
+                        !hasDrawObligation ||
+                        !!explosionData ||
+                        !!favorData ||
+                        !!gameState?.pendingPrompt ||
+                        !!nopeWindow
+                      }
+                      onClick={() => handleCardSelect(card.id)}
+                    />
+                  );
+                })}
+                {hand.length === 0 && (
+                  <div className="text-center text-gray-500 py-8">
+                    <p className="text-3xl mb-2">🫙</p>
+                    <p className="text-sm">No cards in hand</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Floating action controls */}
+        <div className="absolute right-2 sm:right-6 bottom-2 sm:bottom-3 flex items-center gap-3 z-40">
+          {gameState.status === 'in_progress' && (
+            <div
+              className={`inline-flex items-center gap-2.5 bg-black/70 border rounded-full px-4 py-2 shadow-xl backdrop-blur-sm ${
+                isMyTurn ? 'border-emerald-500/40' : 'border-white/10'
+              }`}
+            >
+              {isMyTurn ? (
+                <>
+                  <span className="relative w-3 h-3 flex">
+                    <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500" />
+                  </span>
+                  <span className="text-xs font-bold text-white tracking-wide uppercase">
+                    Your Turn
+                  </span>
+                </>
+              ) : (
+                <span className="text-xs font-bold text-gray-300 tracking-wide">
+                  Waiting for {currentPlayerName}...
+                </span>
+              )}
+            </div>
+          )}
+
+          {canDrawNow && (
             <button
               onClick={handleDrawCard}
-              className={`${primaryBtn} bg-amber-400 text-black shadow-[0_8px_24px_rgba(251,191,36,0.35)] hover:bg-amber-300`}
+              className="relative group bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 hover:from-amber-300 hover:to-amber-400 text-amber-950 font-black px-6 sm:px-7 py-3 rounded-2xl shadow-2xl border-b-4 border-amber-700 active:border-b-0 active:translate-y-1 transition-all flex items-center gap-3 cursor-pointer"
             >
-              Draw {gameState.drawObligations > 1 ? `${gameState.drawObligations} ` : ''}Cards
+              <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                <path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12z" />
+              </svg>
+              <span className="text-sm sm:text-base tracking-wider uppercase font-black">
+                Draw {gameState.drawObligations > 1 ? `${gameState.drawObligations} ` : ''}Cards
+              </span>
             </button>
           )}
 
           {selectedCards.length > 0 && isMyTurn && (
-            <>
+            <div className="flex flex-col sm:flex-row items-center gap-2">
               {selectionNeedsTarget && !selectedTarget && (
-                <span className="text-xs text-amber-200/90 animate-pulse">
+                <span className="text-xs text-amber-200/90 animate-pulse text-center">
                   ← tap a player to target →
                 </span>
               )}
               <button
                 onClick={handlePlayCards}
                 disabled={selectionNeedsTarget && !selectedTarget}
-                className={`${primaryBtn} bg-indigo-400 text-white shadow-[0_8px_24px_rgba(99,102,241,0.35)] hover:bg-indigo-300 disabled:opacity-40 disabled:cursor-not-allowed`}
+                className="bg-gradient-to-r from-rose-500 via-card-nope to-rose-500 hover:brightness-110 text-white font-black px-7 py-3 rounded-2xl shadow-2xl border-b-4 border-[#8a0f24] active:border-b-0 active:translate-y-1 transition-all flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                Play {selectedCards.length > 1 ? `${selectedCards.length} Cards` : 'Card'}
+                <span>▶</span>
+                <span className="text-sm sm:text-base tracking-wider uppercase">
+                  Play {selectedCards.length > 1 ? `${selectedCards.length} Cards` : 'Card'}
+                </span>
               </button>
-            </>
+            </div>
           )}
         </div>
-
-        {/* Cat triple: name a card type to steal */}
-        {isSameCatSelection && selectionCardObjects.length === 3 && isMyTurn && (
-          <div className="flex flex-wrap justify-center gap-1.5 max-w-xl animate-fade-in">
-            {ALL_CARD_TYPES.map((t) => (
-              <button
-                key={t}
-                onClick={() => setNamedCardType(t)}
-                className={`px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${
-                  namedCardType === t
-                    ? 'bg-indigo-500/80 border-indigo-300/60 text-white'
-                    : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
-                }`}
-              >
-                {getCardInfo(t).label}
-              </button>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* Hand dock at bottom center */}
-      <section className="relative z-30 px-6 pt-4 pb-6">
-        {isMyTurn && (
-          <div className="absolute -top-0 left-1/2 -translate-x-1/2 z-40 pointer-events-none text-[11px] font-semibold text-amber-200 bg-amber-400/15 border border-amber-300/30 rounded-full px-3 py-1 animate-fade-in">
-            ● Your turn
-          </div>
-        )}
-        <div className="flex justify-center overflow-x-auto rounded-2xl bg-black/20 border border-white/5 backdrop-blur-sm py-2">
-          <div className="flex items-end px-8">
-            {hand.map((card, i) => {
-              const angle = (i - mid) * spreadDeg;
-              const lift = Math.abs(i - mid) * 6;
-              const fanStyle = {
-                marginLeft: i === 0 ? 0 : overlapStep,
-                '--rot': `${angle}deg`,
-                '--lift': `${lift}px`,
-                '--zi': String(i + 1),
-                '--sel': selectedCards.includes(card.id) ? '-22px' : '0px',
-              } as CSSProperties;
-              return (
-                <GameCard
-                  key={card.id}
-                  card={card}
-                  className="ek-fan"
-                  style={fanStyle}
-                  selected={selectedCards.includes(card.id)}
-                  disabled={
-                    !isMyTurn ||
-                    card.type === 'exploding_kitten' ||
-                    card.type === 'defuse' ||
-                    !hasDrawObligation ||
-                    !!explosionData ||
-                    !!favorData ||
-                    !!gameState?.pendingPrompt ||
-                    !!nopeWindow
-                  }
-                  onClick={() => handleCardSelect(card.id)}
-                />
-              );
-            })}
-            {hand.length === 0 && (
-              <div className="text-center text-slate-500 py-10">
-                <p className="text-3xl mb-2">🫙</p>
-                <p className="text-sm">No cards in hand</p>
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
+      </footer>
 
       {/* ===== Nope window ===== */}
       {nopeWindow && (
